@@ -626,6 +626,7 @@ pull_results_to_path(ClusterMap, Path) ->
     DoFun(),
 
     %% Compress everything into a single archive file
+    %% This needs to be done with bash so that we can do pushd effectively
     ResultsPath = filename:join(?RESULTS_DIR, Path),
     safe_cmd(io_lib:format(
         "pushd ~s >/dev/null; tar -czf ~s.tar.gz ~s; popd >/dev/null",
