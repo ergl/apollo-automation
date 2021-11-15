@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+sudo dpkg -P esl-erlang
+rm *.sh
+rm *.erl
+rm *.escript
+rm *.config
+rm *~
+rm my_ip
+rm -rf sources
+rm -rf tests
+rm esl-*
+rm *.bin

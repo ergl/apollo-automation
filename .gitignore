@@ -1,0 +1,11 @@
+configuration/secret.config
+configuration/run.config
+*.sasl.txt
+*.beam
+*.pdf
+*.png
+_images/
+.vscode/
+*.tar.gz
+.DS_STORE
+erl_crash.dump
