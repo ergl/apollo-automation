@@ -1,3 +1,10 @@
+%% TODO(borja): Measure CPU utilization at the server
+%% We can use mpstat like: `mpstat 2 1 | awk 'END{print 100-$NF"%"}'`
+%% prints the CPU utilization over the last two seconds, and does 100 - idle
+%% we could spawn a separate process to a server and measure CPU during the
+%% benchmark, then return that at the end, and use that as a way to see if we
+%% should continue running benchmarks.
+
 #!/usr/bin/env escript
 
 -mode(compile).
