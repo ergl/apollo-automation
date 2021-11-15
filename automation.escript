@@ -629,7 +629,7 @@ pull_results_to_path(ClusterMap, Path) ->
     ResultsPath = filename:join(?RESULTS_DIR, Path),
     safe_cmd(io_lib:format(
         "tar -czf ~s.tar.gz ~s",
-        [ResultsPath, filename:basename(Path)]
+        [ResultsPath, filename:basename(ResultsPath)]
     )),
 
     ok.
