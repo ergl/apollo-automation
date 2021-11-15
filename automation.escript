@@ -55,9 +55,12 @@ materialize_experiments(Definition) ->
     {run_template, RunTemplate} = lists:keyfind(run_template, 1, Definition),
     {experiments, Experiments} = lists:keyfind(experiments, 1, Definition),
     {ok, Terms} = file:consult(filename:join([?CONFIG_DIR, RunTemplate])),
-    lists:flatmap(
-        fun(Exp) -> materialize_single_experiment(Terms, Exp) end,
-        Experiments
+    %% Don't use flatmap, only flattens one level deep
+    lists:flatten(
+        lists:map(
+            fun(Exp) -> materialize_single_experiment(Terms, Exp) end,
+            Experiments
+        )
     ).
 
 materialize_single_experiment(Terms, Exp = #{clients := {M,F,A}}) ->
@@ -613,7 +616,10 @@ pull_results_to_path(ClusterMap, Path) ->
     DoFun(),
 
     %% Compress everything into a single archive file
-    safe_cmd(io_lib:format("tar -czf ~s.tar.gz", [Path, Path]))
+    safe_cmd(io_lib:format(
+        "tar -czf ~s.tar.gz ~s",
+        [Path, Path]
+    )),
 
     ok.
 
