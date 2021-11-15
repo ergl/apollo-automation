@@ -616,9 +616,10 @@ pull_results_to_path(ClusterMap, Path) ->
     DoFun(),
 
     %% Compress everything into a single archive file
+    ResultsPath = filename:join(?RESULTS_DIR, Path),
     safe_cmd(io_lib:format(
         "tar -czf ~s.tar.gz ~s",
-        [Path, Path]
+        [ResultsPath, filename:basename(Path)]
     )),
 
     ok.
