@@ -122,6 +122,9 @@ execute_spec(Opts, #{config := ConfigFile, results_folder := Results, run_terms 
             ok = load_ext(Master, ClusterMap),
             ok = bench_ext(Master, RunTerms, ClusterMap),
 
+            %% Give system some time (1 sec) to stabilise
+            ok = timer:sleep(1000),
+
             %% Gather all results from the experiment
             ok = pull_results(Results, RunTerms, ClusterMap),
 
@@ -567,6 +570,12 @@ pull_results_to_path(ClusterMap, Path) ->
                     [?SSH_PRIV_KEY, NodeStr, TargetPath]
                 )),
 
+                %% Uncompress results
+                safe_cmd(io_lib:format(
+                    "tar -xzf ~s/results.tar.gz -C ~s --strip-components 1",
+                    [TargetPath, TargetPath]
+                )),
+
                 ok
             end,
             client_nodes(ClusterMap)
@@ -598,6 +607,10 @@ pull_results_to_path(ClusterMap, Path) ->
     end,
 
     DoFun(),
+
+    %% Compress everything into a single archive file
+    safe_cmd(io_lib:format("tar -czf ~s.tar.gz", [Path, Path]))
+
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
