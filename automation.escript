@@ -63,6 +63,10 @@ materialize_experiments(Definition) ->
 materialize_single_experiment(Terms, Exp = #{clients := {M,F,A}}) ->
     [ materialize_single_experiment(Terms, Exp#{clients => N}) || N <- apply(M, F, A) ];
 
+materialize_single_experiment(Terms, Exp = #{clients := List})
+    when is_list(List) ->
+        [ materialize_single_experiment(Terms, Exp#{clients => N}) || N <- List ];
+
 materialize_single_experiment(TemplateTerms, Experiment = #{clients := N})
     when is_integer(N) ->
         % Set our number of threads
