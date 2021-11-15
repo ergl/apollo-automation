@@ -72,8 +72,11 @@ materialize_single_experiment(Terms, Exp = #{clients := List})
 
 materialize_single_experiment(TemplateTerms, Experiment = #{clients := N})
     when is_integer(N) ->
+        %% Sanity check
+        Workers = erlang:max(N, 1),
+
         % Set our number of threads
-        TermsWithConcurrent = lists:keyreplace(concurrent, 1, TemplateTerms, {concurrent, N}),
+        TermsWithConcurrent = lists:keyreplace(concurrent, 1, TemplateTerms, {concurrent, Workers}),
 
         % Fill all template values from experiment definition
         ExperimentTerms =
