@@ -1,12 +1,5 @@
 #!/usr/bin/env escript
 
-%% TODO(borja): Measure CPU utilization at the server
-%% We can use mpstat like: `mpstat 2 1 | awk 'END{print 100-$NF"%"}'`
-%% prints the CPU utilization over the last two seconds, and does 100 - idle
-%% we could spawn a separate process to a server and measure CPU during the
-%% benchmark, then return that at the end, and use that as a way to see if we
-%% should continue running benchmarks.
-
 -mode(compile).
 
 -export([main/1]).
@@ -373,6 +366,7 @@ push_scripts(ConfigFile, Master, ClusterMap) ->
             transfer_script(Node, "build_tc_rules.escript"),
             transfer_script(Node, "my_ip"),
             transfer_script(Node, "fetch_gh_release.sh"),
+            transfer_script(Node, "measure_cpu.escript"),
             transfer_config(Node, ConfigFile)
         end,
         AllNodes
@@ -496,6 +490,21 @@ bench_ext(Master, RunTerms, ClusterMap) ->
 
     MasterPort = ets:lookup_element(?CONF, master_port, 2),
 
+    %% Set up measurements
+    AllNodes = all_nodes(ClusterMap),
+    RunsForMinutes = proplists:get_value(duration, RunTerms),
+    ok = async_for(
+        fun(Node) ->
+            Cmd0 = io_lib:format(
+                "./measure_cpu_escript ~b /home/borja.deregil/~s.cpu",
+                [RunsForMinutes, atom_to_list(Node)]
+            ),
+            Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Cmd0, atom_to_list(Node)]),
+            safe_cmd(Cmd)
+        end,
+        AllNodes
+    ),
+
     pmap(
         fun({Replica, Node}) ->
             Command = client_command(
@@ -510,6 +519,10 @@ bench_ext(Master, RunTerms, ClusterMap) ->
         end,
         NodesWithReplicas
     ),
+
+    %% Ensure that measurements have terminated
+    _ = async_for_receive(AllNodes),
+
     ok.
 
 -spec setup_latencies(_, _) -> ok.
@@ -629,6 +642,12 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
                     [?SSH_PRIV_KEY, NodeStr, ConfigFile, TargetPath]
                 )),
 
+                %% Transfer CPU load file
+                safe_cmd(io_lib:format(
+                    "scp -i ~s borja.deregil@~s:/home/borja.deregil/~s.cpu ~s",
+                    [?SSH_PRIV_KEY, NodeStr, NodeStr, TargetPath]
+                )),
+
                 %% Rename configuration to cluster.config
                 safe_cmd(io_lib:format(
                     "cp ~s ~s/cluster.config",
@@ -662,6 +681,12 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
                 safe_cmd(io_lib:format(
                     "scp -C -i ~s borja.deregil@~s:/home/borja.deregil/~s.log ~s",
                     [?SSH_PRIV_KEY, NodeStr, NodeStr, TargetFile]
+                )),
+
+                %% Transfer CPU load file
+                safe_cmd(io_lib:format(
+                    "scp -i ~s borja.deregil@~s:/home/borja.deregil/~s.cpu ~s",
+                    [?SSH_PRIV_KEY, NodeStr, NodeStr, filename:dirname(TargetFile)]
                 )),
 
                 ok
@@ -793,6 +818,28 @@ pmap(F, L) ->
     L2 = [
         receive
             {pmap, N, R} -> {N, R}
+        end
+        || _ <- L
+    ],
+    L3 = lists:keysort(1, L2),
+    [R || {_, R} <- L3].
+
+async_for(F, L) ->
+    Parent = self(),
+    lists:foldl(
+        fun(X, N) ->
+            spawn_link(fun() -> Parent ! {async_for, N, F(X)} end),
+            N + 1
+        end,
+        0,
+        L
+    ),
+    ok.
+
+async_for_receive(L) ->
+    L2 = [
+        receive
+            {async_for, N, R} -> {N, R}
         end
         || _ <- L
     ],
