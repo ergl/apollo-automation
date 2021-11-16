@@ -572,14 +572,14 @@ pull_results(ResultsFolder, RunTerms, ClusterMap) ->
             proplists:get_value(operations, RunTerms, [])
         ),
     Path = io_lib:format(
-        "~s_partitions_~b+cl_~b+cm_~b+~s+t_~b",
+        "partitions_~b+cl_~b+cm_~b+~s+t_~b_~s",
         [
-            calendar:system_time_to_rfc3339(erlang:system_time(millisecond), [{unit, millisecond}]),
             NPartitions,
             maps:size(ClusterMap),
             NClients,
             case OpString of "" -> "op_NA"; _ -> OpString end,
-            proplists:get_value(concurrent, RunTerms, "NA")
+            proplists:get_value(concurrent, RunTerms, "NA"),
+            calendar:system_time_to_rfc3339(erlang:system_time(millisecond), [{unit, millisecond}])
         ]
     ),
     pull_results_to_path(ClusterMap, filename:join(ResultsFolder, Path)).
