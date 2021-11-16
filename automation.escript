@@ -107,33 +107,60 @@ materialize_single_experiment(TemplateTerms, Experiment = #{clients := N})
 %% Prepare experiment
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-run_experiments(_, []) ->
+-spec cluster_config(experiment_spec()) -> string() | undefined.
+cluster_config(#{config := Config}) -> Config;
+cluster_config(_) -> undefined.
+
+-spec get_next_cluster_config([experiment_spec()]) -> string() | undefined.
+get_next_cluster_config([]) -> undefined;
+get_next_cluster_config([Head | _]) -> cluster_config(Head).
+
+run_experiments(Opts, Specs) ->
+    run_experiments(Opts, undefined, Specs).
+
+run_experiments(_, _, []) ->
     ok;
-run_experiments(Opts, [ Spec | Rest ]) ->
-    case execute_spec(Opts, Spec) of
+
+run_experiments(Opts, LastCluster, [ Spec | Rest ]) ->
+    Result = execute_spec(Opts, LastCluster, Spec, get_next_cluster_config(Rest)),
+    case Result of
         ok ->
-            run_experiments(Opts, Rest);
+            run_experiments(Opts, cluster_config(Spec), Rest);
         {error, Reason} ->
             io:fwrite(standard_error, "Spec error on ~p: ~p~n", [Spec, Reason]),
             error
     end.
 
-execute_spec(Opts, #{config := ConfigFile, results_folder := Results, run_terms := RunTerms}) ->
+execute_spec(Opts, PrevConfig, Spec, NextConfig) ->
+    #{config := ConfigFile, results_folder := Results, run_terms := RunTerms} = Spec,
+
     _ = ets:new(?CONF, [set, named_table]),
     Result =
         try
             {ClusterMap, Master} = preprocess_args(Opts, ConfigFile),
 
-            %% First, sanity check, send all necessary scripts to all nodes
-            ok = check_nodes(Master, ClusterMap),
-            ok = push_scripts(Master, ClusterMap),
-            ok = sync_nodes(Master, ClusterMap),
-            ok = prepare_master(Master),
-            ok = prepare_server(ClusterMap),
-            ok = prepare_lasp_bench(ClusterMap),
+            case ConfigFile =:= PrevConfig of
+                true ->
+                    %% We're reusing the same cluster, no need to download anything.
+                    %% Just check if something went wrong.
+                    ok = check_nodes(Master, ClusterMap);
+                false ->
+                    %% This is a new cluster, past spec cleaned up, so we need to re-download things
+                    ok = check_nodes(Master, ClusterMap),
+                    ok = push_scripts(Master, ClusterMap),
 
-            %% Set up any needed latencies
-            ok = setup_latencies(ClusterMap),
+                    ok = download_master(Master),
+                    ok = download_server(ClusterMap),
+                    ok = download_lasp_bench(ClusterMap),
+
+                    %% Set up any needed latencies
+                    ok = setup_latencies(ClusterMap)
+            end,
+
+            %% Start things, re-sync NTP
+            ok = sync_nodes(Master, ClusterMap),
+            ok = start_master(Master),
+            ok = start_server(ClusterMap),
 
             %% Actual experiment: load then bench
             ok = load_ext(Master, ClusterMap),
@@ -149,11 +176,17 @@ execute_spec(Opts, #{config := ConfigFile, results_folder := Results, run_terms 
             ok = stop_master(Master),
             ok = stop_server(ClusterMap),
 
-            %% Clean up after the experiment
-            ok = cleanup_latencies(ClusterMap),
-            ok = cleanup_master(Master),
-            ok = cleanup_servers(ClusterMap),
-            ok = cleanup_clients(ClusterMap),
+            case ConfigFile =:= NextConfig of
+                true ->
+                    %% Next experiment will reuse our cluster, no need to clean up
+                    ok;
+                false ->
+                    %% Clean up after the experiment
+                    ok = cleanup_latencies(ClusterMap),
+                    ok = cleanup_master(Master),
+                    ok = cleanup_servers(ClusterMap),
+                    ok = cleanup_clients(ClusterMap)
+            end,
 
             ok
         catch
@@ -332,10 +365,6 @@ sync_nodes(Master, ClusterMap) ->
     _ = do_in_nodes_par("sudo service ntp start", AllNodes),
     ok.
 
-prepare_master(Master) ->
-    ok = download_master(Master),
-    ok = start_master(Master).
-
 download_master(Master) ->
     AuthToken = ets:lookup_element(?CONF, token, 2),
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
@@ -368,10 +397,6 @@ stop_master(Master) ->
     io:format("~p~n", [do_in_nodes_seq(master_command("stop"), [Master])]),
     ok.
 
-prepare_server(ClusterMap) ->
-    ok = download_server(ClusterMap),
-    ok = start_server(ClusterMap).
-
 download_server(ClusterMap) ->
     AuthToken = ets:lookup_element(?CONF, token, 2),
     io:format("~p~n", [do_in_nodes_par(server_command("download", AuthToken), server_nodes(ClusterMap))]),
@@ -392,7 +417,7 @@ stop_server(ClusterMap) ->
     io:format("~p~n", [do_in_nodes_par(server_command("stop"), server_nodes(ClusterMap))]),
     ok.
 
-prepare_lasp_bench(ClusterMap) ->
+download_lasp_bench(ClusterMap) ->
     NodeNames = client_nodes(ClusterMap),
     io:format("~p~n", [do_in_nodes_par(client_command("download"), NodeNames)]),
     _ = do_in_nodes_par(client_command("compile"), NodeNames),
