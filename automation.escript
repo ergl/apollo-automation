@@ -157,20 +157,20 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
                 false ->
                     %% This is a new cluster, past spec cleaned up, so we need to re-download things
                     ok = check_nodes(Master, ClusterMap),
-                    ok = push_scripts(ConfigFile, Master, ClusterMap),
+                    ok = push_scripts(filename:basename(ConfigFile), Master, ClusterMap),
 
                     ok = download_master(Master),
-                    ok = download_server(ClusterMap),
+                    ok = download_server(filename:basename(ConfigFile), ClusterMap),
                     ok = download_lasp_bench(ClusterMap),
 
                     %% Set up any needed latencies
-                    ok = setup_latencies(ClusterMap)
+                    ok = setup_latencies(filename:basename(ConfigFile), ClusterMap)
             end,
 
             %% Start things, re-sync NTP
             ok = sync_nodes(Master, ClusterMap),
             ok = start_master(Master),
-            ok = start_server(ClusterMap),
+            ok = start_server(filename:basename(ConfigFile), ClusterMap),
 
             %% Actual experiment: load then bench
             ok = load_ext(Master, ClusterMap),
@@ -196,7 +196,7 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
 
             %% Stop all nodes
             ok = stop_master(Master),
-            ok = stop_server(ClusterMap),
+            ok = stop_server(filename:basename(ConfigFile), ClusterMap),
 
             case ConfigFile =:= NextConfig of
                 true ->
@@ -204,7 +204,7 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
                     ok;
                 false ->
                     %% Clean up after the experiment
-                    ok = cleanup_latencies(ClusterMap),
+                    ok = cleanup_latencies(filename:basename(ConfigFile), ClusterMap),
                     ok = cleanup_master(Master),
                     ok = cleanup_servers(ClusterMap),
                     ok = cleanup_clients(ClusterMap)
@@ -419,15 +419,15 @@ stop_master(Master) ->
     io:format("~p~n", [do_in_nodes_seq(master_command("stop"), [Master])]),
     ok.
 
-download_server(ClusterMap) ->
+download_server(ConfigFile, ClusterMap) ->
     AuthToken = ets:lookup_element(?CONF, token, 2),
-    io:format("~p~n", [do_in_nodes_par(server_command("download", AuthToken), server_nodes(ClusterMap))]),
+    io:format("~p~n", [do_in_nodes_par(server_command(ConfigFile, "download", AuthToken), server_nodes(ClusterMap))]),
     ok.
 
-start_server(ClusterMap) ->
+start_server(ConfigFile, ClusterMap) ->
     ok = maps:fold(
         fun(ClusterName, #{servers := ServerNodes}, _) ->
-            Res = do_in_nodes_par(server_command("start", atom_to_list(ClusterName)), lists:usort(ServerNodes)),
+            Res = do_in_nodes_par(server_command(ConfigFile, "start", atom_to_list(ClusterName)), lists:usort(ServerNodes)),
             io:format("~p: ~p~n", [ClusterName, Res]),
             ok
         end,
@@ -435,8 +435,8 @@ start_server(ClusterMap) ->
         ClusterMap
     ).
 
-stop_server(ClusterMap) ->
-    io:format("~p~n", [do_in_nodes_par(server_command("stop"), server_nodes(ClusterMap))]),
+stop_server(ConfigFile, ClusterMap) ->
+    io:format("~p~n", [do_in_nodes_par(server_command(ConfigFile, "stop"), server_nodes(ClusterMap))]),
     ok.
 
 download_lasp_bench(ClusterMap) ->
@@ -512,15 +512,15 @@ bench_ext(Master, RunTerms, ClusterMap) ->
     ),
     ok.
 
--spec setup_latencies(_) -> ok.
-setup_latencies(ClusterMap) ->
+-spec setup_latencies(_, _) -> ok.
+setup_latencies(ConfigFile, ClusterMap) ->
     maps:fold(
         fun(ClusterName, #{servers := ClusterServers}, _Acc) ->
             io:format(
                 "~p~n",
                 [
                     do_in_nodes_par(
-                        server_command("tc", atom_to_list(ClusterName)),
+                        server_command(ConfigFile, "tc", atom_to_list(ClusterName)),
                         ClusterServers
                     )
                 ]
@@ -531,14 +531,14 @@ setup_latencies(ClusterMap) ->
         ClusterMap
     ).
 
-cleanup_latencies(ClusterMap) ->
+cleanup_latencies(ConfigFile, ClusterMap) ->
     maps:fold(
         fun(ClusterName, #{servers := ClusterServers}, _Acc) ->
             io:format(
                 "~p~n",
                 [
                     do_in_nodes_par(
-                        server_command("tclean", atom_to_list(ClusterName)),
+                        server_command(ConfigFile, "tclean", atom_to_list(ClusterName)),
                         ClusterServers
                     )
                 ]
@@ -705,11 +705,12 @@ master_command(Command, Arg1, Arg2) ->
 master_command(Command, Arg1, Arg2, Arg3, Arg4) ->
     io_lib:format("./master.sh ~s ~s ~s ~s ~s", [Command, Arg1, Arg2, Arg3, Arg4]).
 
-server_command(Command) ->
-    io_lib:format("./server.escript -v -f /home/borja.deregil/cluster.config -c ~s", [Command]).
+server_command(ConfigFile, Command) ->
+    io_lib:format("./server.escript -v -f /home/borja.deregil/~s -c ~s", [ConfigFile, Command]).
 
-server_command(Command, Arg) ->
-    io_lib:format("./server.escript -v -f /home/borja.deregil/cluster.config -c ~s=~s", [
+server_command(ConfigFile, Command, Arg) ->
+    io_lib:format("./server.escript -v -f /home/borja.deregil/~s -c ~s=~s", [
+        ConfigFile,
         Command,
         Arg
     ]).
