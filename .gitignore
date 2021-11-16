@@ -1,3 +1,4 @@
+/results
 configuration/secret.config
 configuration/run.config
 *.sasl.txt
