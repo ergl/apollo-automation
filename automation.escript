@@ -361,7 +361,7 @@ check_nodes(Master, ClusterMap) ->
     ),
     ok.
 
-push_scripts(Master, ClusterMap) ->
+push_scripts(ConfigFile, Master, ClusterMap) ->
     % Transfer server, bench and cluster config
     AllNodes = [Master | all_nodes(ClusterMap)],
     io:format("Transfering benchmark config files (server, bench, cluster)...~n"),
