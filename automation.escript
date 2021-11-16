@@ -589,6 +589,7 @@ pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath)
         fun
             (read) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (read_distinct) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
+            (read_distinct_no2pc) -> io_lib:format("read_no2pc~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (update) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (update_distinct) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (read_write) ->
