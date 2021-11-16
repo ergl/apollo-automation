@@ -496,7 +496,7 @@ bench_ext(Master, RunTerms, ClusterMap) ->
     ok = async_for(
         fun(Node) ->
             Cmd0 = io_lib:format(
-                "./measure_cpu_escript ~b /home/borja.deregil/~s.cpu",
+                "./measure_cpu.escript ~b /home/borja.deregil/~s.cpu",
                 [RunsForMinutes, atom_to_list(Node)]
             ),
             Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Cmd0, atom_to_list(Node)]),
