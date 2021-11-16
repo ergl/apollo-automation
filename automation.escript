@@ -157,7 +157,7 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
                 false ->
                     %% This is a new cluster, past spec cleaned up, so we need to re-download things
                     ok = check_nodes(Master, ClusterMap),
-                    ok = push_scripts(Master, ClusterMap),
+                    ok = push_scripts(ConfigFile, Master, ClusterMap),
 
                     ok = download_master(Master),
                     ok = download_server(ClusterMap),
@@ -373,7 +373,7 @@ push_scripts(Master, ClusterMap) ->
             transfer_script(Node, "build_tc_rules.escript"),
             transfer_script(Node, "my_ip"),
             transfer_script(Node, "fetch_gh_release.sh"),
-            transfer_config(Node, "cluster.config")
+            transfer_config(Node, ConfigFile)
         end,
         AllNodes
     ),
