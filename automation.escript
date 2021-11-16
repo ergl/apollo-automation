@@ -115,6 +115,10 @@ cluster_config(_) -> undefined.
 get_next_cluster_config([]) -> undefined;
 get_next_cluster_config([Head | _]) -> cluster_config(Head).
 
+-spec get_next_result_folder([experiment_spec()]) -> string() | undefined.
+get_next_result_folder([ #{results_folder := Results} | _]) -> Results;
+get_next_result_folder(_) -> undefined.
+
 run_experiments(Opts, Specs) ->
     run_experiments(Opts, undefined, Specs).
 
@@ -122,7 +126,13 @@ run_experiments(_, _, []) ->
     ok;
 
 run_experiments(Opts, LastCluster, [ Spec | Rest ]) ->
-    Result = execute_spec(Opts, LastCluster, Spec, get_next_cluster_config(Rest)),
+    Result = execute_spec(
+        Opts,
+        LastCluster,
+        Spec,
+        get_next_cluster_config(Rest),
+        get_next_result_folder(Rest)
+    ),
     case Result of
         ok ->
             run_experiments(Opts, cluster_config(Spec), Rest);
@@ -131,7 +141,7 @@ run_experiments(Opts, LastCluster, [ Spec | Rest ]) ->
             error
     end.
 
-execute_spec(Opts, PrevConfig, Spec, NextConfig) ->
+execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
     #{config := ConfigFile, results_folder := Results, run_terms := RunTerms} = Spec,
 
     _ = ets:new(?CONF, [set, named_table]),
@@ -170,7 +180,13 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig) ->
             ok = timer:sleep(1000),
 
             %% Gather all results from the experiment
-            ok = pull_results(Results, RunTerms, ClusterMap),
+            %% If Results =/= NextResults, then we can archive the entire path
+            ShouldArchive =
+                case Results of
+                    NextResults -> false;
+                    _ -> {archive, Results}
+                end,
+            ok = pull_results(Results, RunTerms, ClusterMap, ShouldArchive),
 
             %% Stop all nodes
             ok = stop_master(Master),
@@ -540,7 +556,7 @@ cleanup_clients(ClusterMap) ->
     io:format("~p~n", [do_in_nodes_par("rm -rf sources; mkdir -p sources", ClientNodes)]),
     ok.
 
-pull_results(ResultsFolder, RunTerms, ClusterMap) ->
+pull_results(ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath) ->
     {NPartitions, NClients} =
         maps:fold(
             fun
@@ -582,9 +598,9 @@ pull_results(ResultsFolder, RunTerms, ClusterMap) ->
             calendar:system_time_to_rfc3339(erlang:system_time(millisecond), [{unit, millisecond}])
         ]
     ),
-    pull_results_to_path(ClusterMap, filename:join(ResultsFolder, Path)).
+    pull_results_to_path(ClusterMap, filename:join(ResultsFolder, Path), ShouldArchivePath).
 
-pull_results_to_path(ClusterMap, Path) ->
+pull_results_to_path(ClusterMap, Path, ShouldArchivePath) ->
     PullClients = fun() ->
         pmap(
             fun(Node) ->
@@ -650,17 +666,17 @@ pull_results_to_path(ClusterMap, Path) ->
 
     DoFun(),
 
-    %% Compress everything into a single archive file
-    %% This needs to be done with bash so that we can do pushd effectively
-    % ResultsPath = filename:join(?RESULTS_DIR, Path),
-    % safe_cmd(io_lib:format(
-    %     "pushd ~s >/dev/null; tar -czf ~s.tar.gz ~s; popd >/dev/null",
-    %     [
-    %         filename:dirname(ResultsPath),
-    %         ResultsPath,
-    %         filename:basename(ResultsPath)
-    %     ]
-    % )),
+    case ShouldArchivePath of
+        false ->
+            %% This experiment is still on-going, don't archive the path
+            ok;
+        {archive, PathToArchive} ->
+            %% Compress everything into a single archive file
+            safe_cmd(io_lib:format(
+                "./archive_results.sh ~s",
+                [PathToArchive]
+            ))
+    end,
 
     ok.
 
