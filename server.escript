@@ -53,14 +53,21 @@ main(Args) ->
             io:fwrite(standard_error, "Wrong option: reason ~s~n", [Reason]),
             usage(),
             halt(1);
-        {ok, Parsed = #{config := ConfigFile, command := Command}} ->
+        {ok, Parsed = #{config := ConfigFile}} ->
             erlang:put(dry_run, maps:get(dry_run, Parsed, false)),
             erlang:put(verbose, maps:get(verbose, Parsed, false)),
 
             {ok, Config} = file:consult(ConfigFile),
-            case maps:get(command_arg, Parsed, undefined) of
-                undefined -> execute_command(Command, Config);
-                Arg -> execute_command({Command, Arg}, Config)
+            case Parsed of
+                %% First two require an extra argument
+                #{command := tc, command_arg := Arg} ->
+                    execute_command({tc, Arg, ConfigFile}, Config);
+                #{command := tclean, command_arg := Arg} ->
+                    execute_command({tclean, Arg, ConfigFile}, Config);
+                #{command := Command, command_arg := Arg} ->
+                    execute_command({Command, Arg}, Config);
+                #{command := Command} ->
+                    execute_command(Command, Config)
             end
     end.
 
@@ -95,18 +102,18 @@ execute_command({restart, Replica}, Config) ->
     ok = start_ext(Replica, Config),
     ok;
 
-execute_command({tc, ClusterName}, _) ->
+execute_command({tc, ClusterName, ConfigFile}, _) ->
     Cmd = io_lib:format(
-        "escript -c -n build_tc_rules.escript -c ~s -f /home/borja.deregil/cluster.config -r run",
-        [ClusterName]
+        "escript -c -n build_tc_rules.escript -c ~s -f ~s -r run",
+        [ClusterName, ConfigFile]
     ),
     os_cmd(Cmd),
     ok;
 
-execute_command({tclean, ClusterName}, _) ->
+execute_command({tclean, ClusterName, ConfigFile}, _) ->
     Cmd = io_lib:format(
-        "escript -c -n build_tc_rules.escript -c ~s -f /home/borja.deregil/cluster.config -r cleanup",
-        [ClusterName]
+        "escript -c -n build_tc_rules.escript -c ~s -f ~s -r cleanup",
+        [ClusterName, ConfigFile]
     ),
     os_cmd(Cmd),
     ok.
