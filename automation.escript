@@ -631,7 +631,7 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
 
                 %% Rename configuration to cluster.config
                 safe_cmd(io_lib:format(
-                    "mv ~s ~s/cluster.config",
+                    "cp ~s ~s/cluster.config",
                     [filename:join(TargetPath, ConfigFile), TargetPath]
                 )),
 
