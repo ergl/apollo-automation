@@ -686,7 +686,7 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
             %% Compress everything into a single archive file
             safe_cmd(io_lib:format(
                 "./archive_results.sh ~s",
-                [PathToArchive]
+                [filename:join(?RESULTS_DIR, PathToArchive)]
             ))
     end,
 
