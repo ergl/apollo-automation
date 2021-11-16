@@ -12,9 +12,8 @@ main([Minutes, FinalResultPath]) ->
                 MeasureAtSecond = trunc(MeasureAtMinute * 60),
                 timer:sleep(timer:seconds(MeasureAtSecond));
             true ->
-                timer:sleep(timer:minutes(MeasureAtMinute))
+                timer:sleep(timer:minutes(trunc(MeasureAtMinute)))
         end,
-        io:format("Printing!~n", []),
         print_measurement(FinalResultPath)
     catch _:_ ->
         halt(1)
