@@ -550,8 +550,8 @@ pull_results(ResultsFolder, RunTerms, ClusterMap) ->
         "~s_partitions_~b+cl_~b+cm_~b+~s+t_~b",
         [
             calendar:system_time_to_rfc3339(erlang:system_time(millisecond), [{unit, millisecond}]),
-            maps:size(ClusterMap),
             NPartitions,
+            maps:size(ClusterMap),
             NClients,
             case OpString of "" -> "op_NA"; _ -> OpString end,
             proplists:get_value(concurrent, RunTerms, "NA")
