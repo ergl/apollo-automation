@@ -186,7 +186,13 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
                     NextResults -> false;
                     _ -> {archive, Results}
                 end,
-            ok = pull_results(Results, RunTerms, ClusterMap, ShouldArchive),
+            ok = pull_results(
+                ConfigFile,
+                Results,
+                RunTerms,
+                ClusterMap,
+                ShouldArchive
+            ),
 
             %% Stop all nodes
             ok = stop_master(Master),
@@ -556,7 +562,7 @@ cleanup_clients(ClusterMap) ->
     io:format("~p~n", [do_in_nodes_par("rm -rf sources; mkdir -p sources", ClientNodes)]),
     ok.
 
-pull_results(ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath) ->
+pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath) ->
     {NPartitions, NClients} =
         maps:fold(
             fun
@@ -598,9 +604,9 @@ pull_results(ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath) ->
             calendar:system_time_to_rfc3339(erlang:system_time(millisecond), [{unit, millisecond}])
         ]
     ),
-    pull_results_to_path(ClusterMap, filename:join(ResultsFolder, Path), ShouldArchivePath).
+    pull_results_to_path(ConfigFile, ClusterMap, filename:join(ResultsFolder, Path), ShouldArchivePath).
 
-pull_results_to_path(ClusterMap, Path, ShouldArchivePath) ->
+pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
     PullClients = fun() ->
         pmap(
             fun(Node) ->
@@ -619,8 +625,14 @@ pull_results_to_path(ClusterMap, Path, ShouldArchivePath) ->
                 )),
 
                 safe_cmd(io_lib:format(
-                    "scp -i ~s borja.deregil@~s:/home/borja.deregil/cluster.config ~s",
-                    [?SSH_PRIV_KEY, NodeStr, TargetPath]
+                    "scp -i ~s borja.deregil@~s:/home/borja.deregil/~s ~s",
+                    [?SSH_PRIV_KEY, NodeStr, ConfigFile, TargetPath]
+                )),
+
+                %% Rename configuration to cluster.config
+                safe_cmd(io_lib:format(
+                    "mv ~s ~s/cluster.config",
+                    [filename:join(TargetPath, ConfigFile), TargetPath]
                 )),
 
                 safe_cmd(io_lib:format(
