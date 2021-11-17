@@ -147,8 +147,8 @@ run_experiments(Retries, Opts, LastCluster, [ Spec | Rest ]=AllSpecs) ->
             io:fwrite(standard_error, "Spec error on ~p~nError:~p~n", [Spec, Reason]),
             error;
 
-        fatal_error ->
-            io:fwrite(standard_error, "Spec error on ~p~nFatal error~n", [Spec]),
+        {fatal_error, Reason} ->
+            io:fwrite(standard_error, "Fatal spec error on ~p~nError: ~p~n", [Spec, Reason]),
             error
     end.
 
@@ -157,9 +157,10 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
 
     _ = ets:new(?CONF, [set, named_table]),
     case catch preprocess_args(Opts, ConfigFile) of
-        {'EXIT', _} ->
+        {'EXIT', TraceBack} ->
             ets:delete(?CONF),
-            fatal_error;
+            {fatal_error, TraceBack};
+
         {ClusterMap, Master} ->
             Result =
                 try
