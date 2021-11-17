@@ -726,6 +726,8 @@ pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath)
             (read_write) ->
                 {R,W} = proplists:get_value(mixed_read_write, RunTerms),
                 io_lib:format("mixed_~b_~b", [R, W]);
+            (ping) -> io_lib:format("ping_~b", [proplists:get_value(readonly_ops, RunTerms)]);
+            (ping_read) -> io_lib:format("ping_read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (Other) ->
                 atom_to_list(Other)
         end,
