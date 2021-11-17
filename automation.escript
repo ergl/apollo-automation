@@ -163,12 +163,6 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
         {ClusterMap, Master} ->
             Result =
                 try
-                    ok =
-                        case pmap(fun(_) -> timer:sleep(?TIMEOUT * 2) end, [test], ?TIMEOUT) of
-                            {error, _} -> error;
-                            _ -> ok
-                        end,
-
                     case ConfigFile =:= PrevConfig of
                         true ->
                             %% We're reusing the same cluster, no need to download anything.
