@@ -24,8 +24,8 @@
 
 -define(CONF, configuration).
 
-% 5 second timeout for pmap
--define(TIMEOUT, 5000).
+% 2 minute timeout for pmap
+-define(TIMEOUT, timer:minutes(2)).
 -define(RETRIES, 5).
 
 -type experiment_spec() :: #{config := string(), results_folder := string(), run_terms := [{atom(), term()}, ...]}.
