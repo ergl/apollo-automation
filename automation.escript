@@ -24,6 +24,9 @@
 
 -define(CONF, configuration).
 
+% 5 second timeout for pmap
+-define(TIMEOUT, 5000).
+
 -type experiment_spec() :: #{config := string(), results_folder := string(), run_terms := [{atom(), term()}, ...]}.
 
 usage() ->
@@ -304,12 +307,13 @@ preprocess_args(Opts, ConfigFile) ->
 %% Experiment Steps
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-spec check_nodes(_, _) -> ok | {error, term()}.
 check_nodes(Master, ClusterMap) ->
     io:format("Checking that all nodes are up and on the correct governor mode~n"),
 
     AllNodes = [Master | all_nodes(ClusterMap)],
 
-    UptimeRes = do_in_nodes_par("uptime", AllNodes),
+    UptimeRes = do_in_nodes_par("uptime", AllNodes, infinity),
     ok = lists:foldl(
         fun
             (_, {error, Node}) ->
@@ -330,11 +334,13 @@ check_nodes(Master, ClusterMap) ->
     % Set all nodes to performance governor status, then verify
     _ = do_in_nodes_par(
         "echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
-        AllNodes
+        AllNodes,
+        infinity
     ),
     GovernorStatus = do_in_nodes_par(
         "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
-        AllNodes
+        AllNodes,
+        infinity
     ),
     ok = lists:foldl(
         fun
@@ -354,48 +360,67 @@ check_nodes(Master, ClusterMap) ->
     ),
     ok.
 
+-spec push_scripts(_, _, _) -> _ | {error, timeout}.
 push_scripts(ConfigFile, Master, ClusterMap) ->
     % Transfer server, bench and cluster config
     AllNodes = [Master | all_nodes(ClusterMap)],
     io:format("Transfering benchmark config files (server, bench, cluster)...~n"),
-    pmap(
-        fun(Node) ->
-            transfer_script(Node, "master.sh"),
-            transfer_script(Node, "server.escript"),
-            transfer_script(Node, "bench.sh"),
-            transfer_script(Node, "build_tc_rules.escript"),
-            transfer_script(Node, "my_ip"),
-            transfer_script(Node, "fetch_gh_release.sh"),
-            transfer_script(Node, "measure_cpu.escript"),
-            transfer_config(Node, ConfigFile)
-        end,
-        AllNodes
-    ),
-    ok.
+    case
+        pmap(
+            fun(Node) ->
+                transfer_script(Node, "master.sh"),
+                transfer_script(Node, "server.escript"),
+                transfer_script(Node, "bench.sh"),
+                transfer_script(Node, "build_tc_rules.escript"),
+                transfer_script(Node, "my_ip"),
+                transfer_script(Node, "fetch_gh_release.sh"),
+                transfer_script(Node, "measure_cpu.escript"),
+                transfer_config(Node, ConfigFile)
+            end,
+            AllNodes,
+            ?TIMEOUT
+        )
+    of
+        {error, Timeout} ->
+            {error, Timeout};
+        _ ->
+            ok
+    end.
 
 sync_nodes(Master, ClusterMap) ->
     io:format("Resyncing NTP on all nodes~n"),
     AllNodes = [Master | all_nodes(ClusterMap)],
-    _ = do_in_nodes_par("sudo service ntp stop", AllNodes),
-    _ = do_in_nodes_par("sudo ntpd -gq system.imdea", AllNodes),
-    _ = do_in_nodes_par("sudo service ntp start", AllNodes),
-    ok.
+    case do_in_nodes_par("sudo service ntp stop", AllNodes, ?TIMEOUT) of
+        {error, _} -> error;
+        _ ->
+            case do_in_nodes_par("sudo ntpd -gq system.imdea", AllNodes, ?TIMEOUT) of
+                {error, _} -> error;
+                _ ->
+                    case do_in_nodes_par("sudo service ntp start", AllNodes, ?TIMEOUT) of
+                        {error, _} -> error;
+                        _ -> ok
+                    end
+            end
+    end.
 
 download_master(Master) ->
     AuthToken = ets:lookup_element(?CONF, token, 2),
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
-    io:format("~p~n", [do_in_nodes_seq(master_command("download", AuthToken, GitTag), [Master])]),
-    ok.
+    case do_in_nodes_par(master_command("download", AuthToken, GitTag), [Master], ?TIMEOUT) of
+        {error, Reason} ->
+            {error, Reason};
+        Print ->
+            io:format("~p~n", [Print]),
+            ok
+    end.
 
 start_master(Master) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
     Leader = ets:lookup_element(?CONF, leader_cluster, 2),
     NumReplicas = ets:lookup_element(?CONF, n_replicas, 2),
     NumPartitions = ets:lookup_element(?CONF, n_partitions, 2),
-    io:format(
-        "~p~n",
-        [
-            do_in_nodes_par(
+    case
+        do_in_nodes_par(
                 master_command(
                     "run",
                     atom_to_list(Leader),
@@ -403,142 +428,203 @@ start_master(Master) ->
                     integer_to_list(NumPartitions),
                     GitTag
                 ),
-                [Master]
+                [Master],
+                ?TIMEOUT
             )
-        ]
-    ),
-    ok.
+    of
+        {error, _} ->
+            error;
+        Print ->
+            io:format("~p~n", [Print]),
+            ok
+    end.
 
 stop_master(Master) ->
-    io:format("~p~n", [do_in_nodes_seq(master_command("stop"), [Master])]),
-    ok.
+    case do_in_nodes_par(master_command("stop"), [Master], ?TIMEOUT) of
+        {error, _} ->
+            error;
+        _ ->
+            ok
+    end.
 
 download_server(ConfigFile, ClusterMap) ->
     AuthToken = ets:lookup_element(?CONF, token, 2),
-    io:format("~p~n", [do_in_nodes_par(server_command(ConfigFile, "download", AuthToken), server_nodes(ClusterMap))]),
-    ok.
+    case do_in_nodes_par(server_command(ConfigFile, "download", AuthToken), server_nodes(ClusterMap), ?TIMEOUT) of
+        {error, Reason} ->
+            {error, Reason};
+        Print ->
+            io:format("~p~n", [Print]),
+            ok
+    end.
 
 start_server(ConfigFile, ClusterMap) ->
-    ok = maps:fold(
-        fun(ClusterName, #{servers := ServerNodes}, _) ->
-            Res = do_in_nodes_par(server_command(ConfigFile, "start", atom_to_list(ClusterName)), lists:usort(ServerNodes)),
-            io:format("~p: ~p~n", [ClusterName, Res]),
-            ok
+    maps:fold(
+        fun
+            (_, _, error) ->
+                error;
+            (ClusterName, #{servers := ServerNodes}, ok) ->
+                case
+                    do_in_nodes_par(server_command(ConfigFile, "start", atom_to_list(ClusterName)), lists:usort(ServerNodes), ?TIMEOUT)
+                of
+                    {error, _} ->
+                        error;
+                    Res ->
+                        io:format("~p: ~p~n", [ClusterName, Res]),
+                        ok
+                end
         end,
         ok,
         ClusterMap
     ).
 
 stop_server(ConfigFile, ClusterMap) ->
-    io:format("~p~n", [do_in_nodes_par(server_command(ConfigFile, "stop"), server_nodes(ClusterMap))]),
-    ok.
+    case do_in_nodes_par(server_command(ConfigFile, "stop"), server_nodes(ClusterMap), ?TIMEOUT) of
+        {error, _} ->
+            error;
+        Res ->
+            io:format("~p~n", [Res]),
+            ok
+    end.
 
 download_lasp_bench(ClusterMap) ->
     NodeNames = client_nodes(ClusterMap),
-    io:format("~p~n", [do_in_nodes_par(client_command("download"), NodeNames)]),
-    _ = do_in_nodes_par(client_command("compile"), NodeNames),
-    ok.
+    case do_in_nodes_par(client_command("download"), NodeNames, ?TIMEOUT) of
+        {error, DlReason} ->
+            {error, DlReason};
+        Print0 ->
+            io:format("~p~n", [Print0]),
+            case do_in_nodes_par(client_command("compile"), NodeNames, ?TIMEOUT) of
+                {error, CompReason} ->
+                    {error, CompReason};
+                Print1 ->
+                    io:format("~p~n", [Print1]),
+                    ok
+            end
+    end.
 
 load_ext(Master, ClusterMap) ->
     MasterPort = ets:lookup_element(?CONF, master_port, 2),
 
-    pmap(
+    Res0 = pmap(
         fun(Node) ->
             transfer_config(Node, "bench_properties.config")
         end,
-        client_nodes(ClusterMap)
+        client_nodes(ClusterMap),
+        ?TIMEOUT
     ),
 
-    TargetClients =
-        maps:fold(
-            fun(Replica, #{clients := C}, Acc) ->
-                [ { Replica, hd(lists:usort(C)) } | Acc ]
-            end,
-            [],
-            ClusterMap
-        ),
-    pmap(
-        fun({TargetReplica, ClientNode}) ->
-            Command = client_command(
-                "-y load_ext",
-                atom_to_list(Master),
-                integer_to_list(MasterPort),
-                atom_to_list(TargetReplica),
-                "/home/borja.deregil/bench_properties.config"
-            ),
-            Cmd = io_lib:format(
-                "~s \"~s\" ~s",
-                [?IN_NODES_PATH, Command, atom_to_list(ClientNode)]
-            ),
-            safe_cmd(Cmd)
-        end,
-        TargetClients
-    ),
-    ok.
+    case Res0 of
+        {error, _} ->
+            error;
+        _ ->
+            TargetClients =
+                maps:fold(
+                    fun(Replica, #{clients := C}, Acc) ->
+                        [ { Replica, hd(lists:usort(C)) } | Acc ]
+                    end,
+                    [],
+                    ClusterMap
+                ),
+
+            Res1 =
+                pmap(
+                    fun({TargetReplica, ClientNode}) ->
+                        Command = client_command(
+                            "-y load_ext",
+                            atom_to_list(Master),
+                            integer_to_list(MasterPort),
+                            atom_to_list(TargetReplica),
+                            "/home/borja.deregil/bench_properties.config"
+                        ),
+                        Cmd = io_lib:format(
+                            "~s \"~s\" ~s",
+                            [?IN_NODES_PATH, Command, atom_to_list(ClientNode)]
+                        ),
+                        safe_cmd(Cmd)
+                    end,
+                    TargetClients,
+                    ?TIMEOUT
+                ),
+            case Res1 of
+                {error, _} ->
+                    error;
+                _ ->
+                    ok
+            end
+    end.
 
 bench_ext(Master, RunTerms, ClusterMap) ->
     ok = write_terms(filename:join(?CONFIG_DIR, "run.config"), RunTerms),
 
     NodeNames = client_nodes(ClusterMap),
-    pmap(fun(Node) -> transfer_config(Node, "run.config") end, NodeNames),
+    case pmap(fun(Node) -> transfer_config(Node, "run.config") end, NodeNames, ?TIMEOUT) of
+        {error, _} ->
+            error;
+        _ ->
+            NodesWithReplicas = [
+                {Replica, N} ||
+                    {Replica, #{clients := C}} <- maps:to_list(ClusterMap),
+                    N <- lists:usort(C)
+            ],
 
-    NodesWithReplicas = [
-        {Replica, N} ||
-            {Replica, #{clients := C}} <- maps:to_list(ClusterMap),
-            N <- lists:usort(C)
-    ],
+            MasterPort = ets:lookup_element(?CONF, master_port, 2),
 
-    MasterPort = ets:lookup_element(?CONF, master_port, 2),
+            %% Set up measurements
+            RunsForMinutes = proplists:get_value(duration, RunTerms),
 
-    %% Set up measurements
-    AllNodes = all_nodes(ClusterMap),
-    RunsForMinutes = proplists:get_value(duration, RunTerms),
-    ok = async_for(
-        fun(Node) ->
-            Cmd0 = io_lib:format(
-                "./measure_cpu.escript ~b /home/borja.deregil/~s.cpu",
-                [RunsForMinutes, atom_to_list(Node)]
+            Token = async_for(
+                fun(Node) ->
+                    Cmd0 = io_lib:format(
+                        "./measure_cpu.escript ~b /home/borja.deregil/~s.cpu",
+                        [RunsForMinutes, atom_to_list(Node)]
+                    ),
+                    Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Cmd0, atom_to_list(Node)]),
+                    safe_cmd(Cmd)
+                end,
+                all_nodes(ClusterMap)
             ),
-            Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Cmd0, atom_to_list(Node)]),
-            safe_cmd(Cmd)
-        end,
-        AllNodes
-    ),
 
-    pmap(
-        fun({Replica, Node}) ->
-            Command = client_command(
-                "run",
-                "/home/borja.deregil/run.config",
-                Master,
-                integer_to_list(MasterPort),
-                atom_to_list(Replica)
+            pmap(
+                fun({Replica, Node}) ->
+                    Command = client_command(
+                        "run",
+                        "/home/borja.deregil/run.config",
+                        Master,
+                        integer_to_list(MasterPort),
+                        atom_to_list(Replica)
+                    ),
+                    Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, atom_to_list(Node)]),
+                    safe_cmd(Cmd)
+                end,
+                NodesWithReplicas,
+                infinity %% Ok to wait for a long time here
             ),
-            Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, atom_to_list(Node)]),
-            safe_cmd(Cmd)
-        end,
-        NodesWithReplicas
-    ),
 
-    %% Ensure that measurements have terminated
-    _ = async_for_receive(AllNodes),
+            %% Ensure that measurements have terminated
+            async_for_receive(Token, ?TIMEOUT)
+    end.
 
-    ok.
-
--spec setup_latencies(_, _) -> ok.
+-spec setup_latencies(_, _) -> ok | error.
 setup_latencies(ConfigFile, ClusterMap) ->
     maps:fold(
-        fun(ClusterName, #{servers := ClusterServers}, _Acc) ->
-            io:format(
-                "~p~n",
-                [
+        fun
+            (_, _, error) ->
+                error;
+
+            (ClusterName, #{servers := ClusterServers}, ok) ->
+                case
                     do_in_nodes_par(
-                        server_command(ConfigFile, "tc", atom_to_list(ClusterName)),
-                        ClusterServers
-                    )
-                ]
-            ),
-            ok
+                            server_command(ConfigFile, "tc", atom_to_list(ClusterName)),
+                            ClusterServers,
+                            ?TIMEOUT
+                        )
+                of
+                    {error, _} ->
+                        error;
+                    Print ->
+                        io:format("~p~n", [Print]),
+                        ok
+                end
         end,
         ok,
         ClusterMap
@@ -552,7 +638,8 @@ cleanup_latencies(ConfigFile, ClusterMap) ->
                 [
                     do_in_nodes_par(
                         server_command(ConfigFile, "tclean", atom_to_list(ClusterName)),
-                        ClusterServers
+                        ClusterServers,
+                        infinity
                     )
                 ]
             )
@@ -567,12 +654,12 @@ cleanup_master(Master) ->
 
 cleanup_servers(ClusterMap) ->
     ServerNodes = server_nodes(ClusterMap),
-    io:format("~p~n", [do_in_nodes_par("rm -rf sources; mkdir -p sources", ServerNodes)]),
+    io:format("~p~n", [do_in_nodes_par("rm -rf sources; mkdir -p sources", ServerNodes, infinity)]),
     ok.
 
 cleanup_clients(ClusterMap) ->
     ClientNodes = client_nodes(ClusterMap),
-    io:format("~p~n", [do_in_nodes_par("rm -rf sources; mkdir -p sources", ClientNodes)]),
+    io:format("~p~n", [do_in_nodes_par("rm -rf sources; mkdir -p sources", ClientNodes, infinity)]),
     ok.
 
 pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath) ->
@@ -621,7 +708,7 @@ pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath)
     pull_results_to_path(ConfigFile, ClusterMap, filename:join(ResultsFolder, Path), ShouldArchivePath).
 
 pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
-    PullClients = fun() ->
+    PullClients = fun(Timeout) ->
         pmap(
             fun(Node) ->
                 NodeStr = atom_to_list(Node),
@@ -668,11 +755,12 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
 
                 ok
             end,
-            client_nodes(ClusterMap)
+            client_nodes(ClusterMap),
+            Timeout
         )
     end,
 
-    PullServerLogs = fun() ->
+    PullServerLogs = fun(Timeout) ->
         pmap(
             fun(Node) ->
                 NodeStr = atom_to_list(Node),
@@ -692,31 +780,36 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
 
                 ok
             end,
-            server_nodes(ClusterMap)
+            server_nodes(ClusterMap),
+            Timeout
         )
     end,
 
-    DoFun = fun() ->
-        _ = PullClients(),
-        _ = PullServerLogs(),
-        ok
+    DoFun = fun(Timeout) ->
+        case PullClients(Timeout) of
+            {error, _} ->
+                error;
+            ok ->
+                PullServerLogs(Timeout)
+        end
     end,
 
-    DoFun(),
-
-    case ShouldArchivePath of
-        false ->
-            %% This experiment is still on-going, don't archive the path
-            ok;
-        {archive, PathToArchive} ->
-            %% Compress everything into a single archive file
-            safe_cmd(io_lib:format(
-                "./archive_results.sh ~s",
-                [filename:join(?RESULTS_DIR, PathToArchive)]
-            ))
-    end,
-
-    ok.
+    case DoFun(?TIMEOUT) of
+        error ->
+            error;
+        _ ->
+            case ShouldArchivePath of
+                false ->
+                    %% This experiment is still on-going, don't archive the path
+                    ok;
+                {archive, PathToArchive} ->
+                    %% Compress everything into a single archive file
+                    safe_cmd(io_lib:format(
+                        "./archive_results.sh ~s",
+                        [filename:join(?RESULTS_DIR, PathToArchive)]
+                    ))
+            end
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Util
@@ -778,13 +871,14 @@ do_in_nodes_seq(Command, Nodes) ->
     Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, list_to_str(Nodes)]),
     safe_cmd(Cmd).
 
-do_in_nodes_par(Command, Nodes) ->
+do_in_nodes_par(Command, Nodes, Timeout) ->
     pmap(
         fun(Node) ->
             Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, atom_to_list(Node)]),
             safe_cmd(Cmd)
         end,
-        Nodes
+        Nodes,
+        Timeout
     ).
 
 list_to_str(Nodes) ->
@@ -806,46 +900,60 @@ get_conf(Key, Default) ->
         [{Key, Val}] -> Val
     end.
 
-pmap(F, L) ->
+pmap(F, L, infinity) ->
     Parent = self(),
     lists:foldl(
         fun(X, N) ->
-            spawn_link(fun() -> Parent ! {pmap, N, F(X)} end),
+            erlang:spawn(fun() -> Parent ! {pmap, N, F(X)} end),
             N + 1
         end,
         0,
         L
     ),
-    L2 = [
-        receive
-            {pmap, N, R} -> {N, R}
-        end
-        || _ <- L
-    ],
-    L3 = lists:keysort(1, L2),
-    [R || {_, R} <- L3].
+    L2 = [ receive {pmap, N, R} -> {N, R} end || _ <- L ],
+    [R || {_, R} <- lists:keysort(1, L2)];
+
+pmap(F, L, Timeout) ->
+    Parent = self(),
+    {Pids, _} = lists:foldl(
+        fun(X, {Pids, N}) ->
+            Pid = erlang:spawn(fun() -> Parent ! {pmap, N, F(X)} end),
+            {[Pid | Pids], N + 1}
+        end,
+        {[], 0},
+        L
+    ),
+    try
+        L2 = [ receive {pmap, N, R} -> {N, R} after Timeout -> throw(timeout) end || _ <- L ],
+        [R || {_, R} <- lists:keysort(1, L2)]
+    catch throw:timeout ->
+        [ erlang:exit(P, kill) || P <- Pids ],
+        {error, timeout}
+    end.
 
 async_for(F, L) ->
     Parent = self(),
-    lists:foldl(
-        fun(X, N) ->
-            spawn_link(fun() -> Parent ! {async_for, N, F(X)} end),
-            N + 1
+    {Pids, _} = lists:foldl(
+        fun(X, {Pids, N}) ->
+            Pid = erlang:spawn(fun() -> Parent ! {async_for, N, F(X)} end),
+            {[Pid | Pids], N + 1}
         end,
-        0,
+        {[], 0},
         L
     ),
-    ok.
+    Pids.
 
-async_for_receive(L) ->
-    L2 = [
-        receive
-            {async_for, N, R} -> {N, R}
-        end
-        || _ <- L
-    ],
-    L3 = lists:keysort(1, L2),
-    [R || {_, R} <- L3].
+async_for_receive(Pids, infinity) ->
+    L2 = [ receive {async_for, N, R} -> {N, R} end || _ <- Pids ],
+    [R || {_, R} <- lists:keysort(1, L2)];
+async_for_receive(Pids, Timeout) ->
+    try
+        L2 = [ receive {async_for, N, R} -> {N, R} after Timeout -> throw(timeout) end || _ <- Pids ],
+        [R || {_, R} <- lists:keysort(1, L2)]
+    catch throw:timeout ->
+        [ erlang:exit(P, kill) || P <- Pids ],
+        {error, timeout}
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% util
