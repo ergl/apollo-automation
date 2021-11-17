@@ -26,6 +26,7 @@
 
 % 5 second timeout for pmap
 -define(TIMEOUT, 5000).
+-define(RETRIES, 5).
 
 -type experiment_spec() :: #{config := string(), results_folder := string(), run_terms := [{atom(), term()}, ...]}.
 
@@ -116,12 +117,12 @@ get_next_result_folder([ #{results_folder := Results} | _]) -> Results;
 get_next_result_folder(_) -> undefined.
 
 run_experiments(Opts, Specs) ->
-    run_experiments(Opts, undefined, Specs).
+    run_experiments(?RETRIES, Opts, undefined, Specs).
 
-run_experiments(_, _, []) ->
+run_experiments(_, _, _, []) ->
     ok;
 
-run_experiments(Opts, LastCluster, [ Spec | Rest ]) ->
+run_experiments(Retries, Opts, LastCluster, [ Spec | Rest ]=AllSpecs) ->
     Result = execute_spec(
         Opts,
         LastCluster,
@@ -131,7 +132,13 @@ run_experiments(Opts, LastCluster, [ Spec | Rest ]) ->
     ),
     case Result of
         ok ->
-            run_experiments(Opts, cluster_config(Spec), Rest);
+            %% Start next spec with fresh retries
+            run_experiments(?RETRIES, Opts, cluster_config(Spec), Rest);
+
+        {error, _} when Retries > 0 ->
+            %% Retry again, with last cluster as undefined so that we can start from a clean slate
+            run_experiments(Retries - 1, Opts, undefined, AllSpecs);
+
         {error, Reason} ->
             io:fwrite(standard_error, "Spec error on ~p: ~p~n", [Spec, Reason]),
             error
