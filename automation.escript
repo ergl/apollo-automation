@@ -141,6 +141,10 @@ run_experiments(Retries, Opts, LastCluster, [ Spec | Rest ]=AllSpecs) ->
 
         {error, Reason} ->
             io:fwrite(standard_error, "Spec error on ~p: ~p~n", [Spec, Reason]),
+            error;
+
+        fatal_error ->
+            io:fwrite(standard_error, "Spec error on ~p: fatal_error~n", [Spec]),
             error
     end.
 
@@ -148,78 +152,88 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
     #{config := ConfigFile, results_folder := Results, run_terms := RunTerms} = Spec,
 
     _ = ets:new(?CONF, [set, named_table]),
-    Result =
-        try
-            {ClusterMap, Master} = preprocess_args(Opts, ConfigFile),
+    case catch preprocess_args(Opts, ConfigFile) of
+        {'EXIT', _} ->
+            ets:delete(?CONF),
+            fatal_error;
+        {ClusterMap, Master} ->
+            Result =
+                try
+                    case ConfigFile =:= PrevConfig of
+                        true ->
+                            %% We're reusing the same cluster, no need to download anything.
+                            %% Just check if something went wrong.
+                            ok = check_nodes(Master, ClusterMap);
+                        false ->
+                            %% This is a new cluster, past spec cleaned up, so we need to re-download things
+                            ok = check_nodes(Master, ClusterMap),
+                            ok = push_scripts(filename:basename(ConfigFile), Master, ClusterMap),
 
-            case ConfigFile =:= PrevConfig of
-                true ->
-                    %% We're reusing the same cluster, no need to download anything.
-                    %% Just check if something went wrong.
-                    ok = check_nodes(Master, ClusterMap);
-                false ->
-                    %% This is a new cluster, past spec cleaned up, so we need to re-download things
-                    ok = check_nodes(Master, ClusterMap),
-                    ok = push_scripts(filename:basename(ConfigFile), Master, ClusterMap),
+                            ok = download_master(Master),
+                            ok = download_server(filename:basename(ConfigFile), ClusterMap),
+                            ok = download_lasp_bench(ClusterMap),
 
-                    ok = download_master(Master),
-                    ok = download_server(filename:basename(ConfigFile), ClusterMap),
-                    ok = download_lasp_bench(ClusterMap),
+                            %% Set up any needed latencies
+                            ok = setup_latencies(filename:basename(ConfigFile), ClusterMap)
+                    end,
 
-                    %% Set up any needed latencies
-                    ok = setup_latencies(filename:basename(ConfigFile), ClusterMap)
-            end,
+                    %% Start things, re-sync NTP
+                    ok = sync_nodes(Master, ClusterMap),
+                    ok = start_master(Master),
+                    ok = start_server(filename:basename(ConfigFile), ClusterMap),
 
-            %% Start things, re-sync NTP
-            ok = sync_nodes(Master, ClusterMap),
-            ok = start_master(Master),
-            ok = start_server(filename:basename(ConfigFile), ClusterMap),
+                    %% Actual experiment: load then bench
+                    ok = load_ext(Master, ClusterMap),
+                    ok = bench_ext(Master, RunTerms, ClusterMap),
 
-            %% Actual experiment: load then bench
-            ok = load_ext(Master, ClusterMap),
-            ok = bench_ext(Master, RunTerms, ClusterMap),
+                    %% Give system some time (1 sec) to stabilise
+                    ok = timer:sleep(1000),
 
-            %% Give system some time (1 sec) to stabilise
-            ok = timer:sleep(1000),
+                    %% Gather all results from the experiment
+                    %% If Results =/= NextResults, then we can archive the entire path
+                    ShouldArchive =
+                        case Results of
+                            NextResults -> false;
+                            _ -> {archive, Results}
+                        end,
+                    ok = pull_results(
+                        ConfigFile,
+                        Results,
+                        RunTerms,
+                        ClusterMap,
+                        ShouldArchive
+                    ),
 
-            %% Gather all results from the experiment
-            %% If Results =/= NextResults, then we can archive the entire path
-            ShouldArchive =
-                case Results of
-                    NextResults -> false;
-                    _ -> {archive, Results}
+                    %% Stop all nodes
+                    ok = stop_master(Master),
+                    ok = stop_server(filename:basename(ConfigFile), ClusterMap),
+
+                    case ConfigFile =:= NextConfig of
+                        true ->
+                            %% Next experiment will reuse our cluster, no need to clean up
+                            ok;
+                        false ->
+                            %% Clean up after the experiment
+                            ok = cleanup_latencies(filename:basename(ConfigFile), ClusterMap),
+                            ok = cleanup_master(Master),
+                            ok = cleanup_servers(ClusterMap),
+                            ok = cleanup_clients(ClusterMap)
+                    end,
+
+                    ok
+                catch
+                    throw:Term ->
+                        %% An exception happened, clean up everything just in case
+                        brutal_client_kill(ClusterMap),
+                        cleanup_latencies(filename:basename(ConfigFile), ClusterMap),
+                        cleanup_master(Master),
+                        cleanup_servers(ClusterMap),
+                        cleanup_clients(ClusterMap),
+                        {error, Term}
                 end,
-            ok = pull_results(
-                ConfigFile,
-                Results,
-                RunTerms,
-                ClusterMap,
-                ShouldArchive
-            ),
-
-            %% Stop all nodes
-            ok = stop_master(Master),
-            ok = stop_server(filename:basename(ConfigFile), ClusterMap),
-
-            case ConfigFile =:= NextConfig of
-                true ->
-                    %% Next experiment will reuse our cluster, no need to clean up
-                    ok;
-                false ->
-                    %% Clean up after the experiment
-                    ok = cleanup_latencies(filename:basename(ConfigFile), ClusterMap),
-                    ok = cleanup_master(Master),
-                    ok = cleanup_servers(ClusterMap),
-                    ok = cleanup_clients(ClusterMap)
-            end,
-
-            ok
-        catch
-            throw:Term ->
-                {error, Term}
-        end,
-    ets:delete(?CONF),
-    Result.
+            ets:delete(?CONF),
+            Result
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Set up experiment
@@ -492,6 +506,10 @@ stop_server(ConfigFile, ClusterMap) ->
             io:format("~p~n", [Res]),
             ok
     end.
+
+brutal_client_kill(ClusterMap) ->
+    _ = do_in_nodes_par("pkill -9 beam", client_nodes(ClusterMap), ?TIMEOUT),
+    ok.
 
 download_lasp_bench(ClusterMap) ->
     NodeNames = client_nodes(ClusterMap),
