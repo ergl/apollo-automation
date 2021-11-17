@@ -160,7 +160,7 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
             Result =
                 try
                     ok =
-                        case pmap(fun() -> timer:sleep(?TIMEOUT * 2) end, [test], ?TIMEOUT) of
+                        case pmap(fun(_) -> timer:sleep(?TIMEOUT * 2) end, [test], ?TIMEOUT) of
                             {error, _} -> error;
                             _ -> ok
                         end,
