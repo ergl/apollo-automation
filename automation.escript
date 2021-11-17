@@ -136,15 +136,19 @@ run_experiments(Retries, Opts, LastCluster, [ Spec | Rest ]=AllSpecs) ->
             run_experiments(?RETRIES, Opts, cluster_config(Spec), Rest);
 
         {error, _} when Retries > 0 ->
+            io:fwrite(
+                standard_error,
+                "Retrying spec error (~b/~b) on spec: ~n~p~n", [Retries, ?RETRIES, Spec]
+            ),
             %% Retry again, with last cluster as undefined so that we can start from a clean slate
             run_experiments(Retries - 1, Opts, undefined, AllSpecs);
 
         {error, Reason} ->
-            io:fwrite(standard_error, "Spec error on ~p: ~p~n", [Spec, Reason]),
+            io:fwrite(standard_error, "Spec error on ~p~nError:~p~n", [Spec, Reason]),
             error;
 
         fatal_error ->
-            io:fwrite(standard_error, "Spec error on ~p: fatal_error~n", [Spec]),
+            io:fwrite(standard_error, "Spec error on ~p~nFatal error~n", [Spec]),
             error
     end.
 
@@ -228,23 +232,23 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
 
                     ok
                 catch
-                    error:Exception ->
+                    error:Exception:Stack ->
                         %% An exception happened, clean up everything just in case
                         brutal_client_kill(ClusterMap),
                         cleanup_latencies(filename:basename(ConfigFile), ClusterMap),
                         cleanup_master(Master),
                         cleanup_servers(ClusterMap),
                         cleanup_clients(ClusterMap),
-                        {error, Exception};
+                        {error, {Exception, Stack}};
 
-                    throw:Term ->
+                    throw:Term:Stack ->
                         %% An exception happened, clean up everything just in case
                         brutal_client_kill(ClusterMap),
                         cleanup_latencies(filename:basename(ConfigFile), ClusterMap),
                         cleanup_master(Master),
                         cleanup_servers(ClusterMap),
                         cleanup_clients(ClusterMap),
-                        {error, Term}
+                        {error, {Term, Stack}}
                 end,
             ets:delete(?CONF),
             Result
