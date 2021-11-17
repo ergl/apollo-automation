@@ -228,6 +228,15 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
 
                     ok
                 catch
+                    error:Exception ->
+                        %% An exception happened, clean up everything just in case
+                        brutal_client_kill(ClusterMap),
+                        cleanup_latencies(filename:basename(ConfigFile), ClusterMap),
+                        cleanup_master(Master),
+                        cleanup_servers(ClusterMap),
+                        cleanup_clients(ClusterMap),
+                        {error, Exception};
+
                     throw:Term ->
                         %% An exception happened, clean up everything just in case
                         brutal_client_kill(ClusterMap),
