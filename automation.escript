@@ -833,7 +833,7 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
         case PullClients(Timeout) of
             {error, _} ->
                 error;
-            ok ->
+            _ ->
                 PullServerLogs(Timeout)
         end
     end,
@@ -851,7 +851,8 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
                     safe_cmd(io_lib:format(
                         "./archive_results.sh ~s",
                         [filename:join(?RESULTS_DIR, PathToArchive)]
-                    ))
+                    )),
+                    ok
             end
     end.
 
