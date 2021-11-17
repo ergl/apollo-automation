@@ -640,7 +640,12 @@ bench_ext(Master, RunTerms, ClusterMap) ->
             ),
 
             %% Ensure that measurements have terminated
-            async_for_receive(Token, ?TIMEOUT)
+            case async_for_receive(Token, ?TIMEOUT) of
+                {error, timeout} ->
+                    {error, timeout};
+                _ ->
+                    ok
+            end
     end.
 
 -spec setup_latencies(_, _) -> ok | error.
