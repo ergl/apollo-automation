@@ -592,6 +592,7 @@ load_ext(Master, ClusterMap) ->
             end
     end.
 
+% TODO: Experiment might get stuck here, fix
 bench_ext(Master, RunTerms, ClusterMap) ->
     ok = write_terms(filename:join(?CONFIG_DIR, "run.config"), RunTerms),
 
