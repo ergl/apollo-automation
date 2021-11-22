@@ -592,7 +592,6 @@ load_ext(Master, ClusterMap) ->
             end
     end.
 
-% TODO: Experiment might get stuck here, fix
 bench_ext(Master, RunTerms, ClusterMap) ->
     ok = write_terms(filename:join(?CONFIG_DIR, "run.config"), RunTerms),
 
@@ -624,6 +623,8 @@ bench_ext(Master, RunTerms, ClusterMap) ->
                 all_nodes(ClusterMap)
             ),
 
+            %% Wait at least the same time that the benchmark is supposed to run
+            BenchTimeout = timer:minutes(RunsForMinutes) + ?TIMEOUT,
             pmap(
                 fun({Replica, Node}) ->
                     Command = client_command(
@@ -637,7 +638,7 @@ bench_ext(Master, RunTerms, ClusterMap) ->
                     safe_cmd(Cmd)
                 end,
                 NodesWithReplicas,
-                infinity %% Ok to wait for a long time here
+                BenchTimeout
             ),
 
             %% Ensure that measurements have terminated
