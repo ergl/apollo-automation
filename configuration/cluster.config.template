@@ -5,7 +5,7 @@
 {master_node, 'apollo-1-1.imdea'}.
 {master_port, 7087}.
 {clusters, '_'}.
-{latencies, '_'}.
+{latencies, #{}}.
 {local_dc_pool_size, 1}.
 {ext_local_port, 7070}.
 {ext_dc_port, 8989}.
