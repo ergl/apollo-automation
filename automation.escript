@@ -4,6 +4,7 @@
 
 -export([main/1]).
 
+-define(LOCAL_SELF_DIR, "/Users/ryan/dev/imdea/code/automation").
 -define(SELF_DIR, "/home/borja.deregil/automation").
 -define(SSH_PRIV_KEY, "/home/borja.deregil/.ssh/id_ed25519").
 -define(RESULTS_DIR, "/home/borja.deregil/results").
@@ -14,6 +15,10 @@
 
 -define(CONFIG_DIR,
     unicode:characters_to_list(io_lib:format("~s/configuration", [?SELF_DIR]))
+).
+
+-define(LOCAL_CONFIG_DIR,
+    unicode:characters_to_list(io_lib:format("~s/configuration", [?LOCAL_SELF_DIR]))
 ).
 
 -define(TOKEN_CONFIG,
@@ -63,7 +68,7 @@ usage() ->
     Name = filename:basename(escript:script_name()),
     ok = io:fwrite(
         standard_error,
-        "Usage: ~s [-ds] --experiment <experiment-definition>~n",
+        "Usage: ~s [-ds] --generate <experiment-definition> | --experiment <experiment-definition>~n",
         [Name]
     ).
 
@@ -73,9 +78,20 @@ main(Args) ->
             io:fwrite(standard_error, "Wrong option: reason ~s~n", [Reason]),
             usage(),
             halt(1);
+
+        {ok, #{generate_definition := Definition}} ->
+            {ok, DefinitionTerms} = file:consult(Definition),
+            [#{
+                config_terms := ConfigTerms,
+                run_terms := RunTerms
+            } | _] = materialize_experiments(?LOCAL_CONFIG_DIR, DefinitionTerms),
+            ok = write_terms(filename:join(?LOCAL_CONFIG_DIR, "cluster_definition.config"), ConfigTerms),
+            ok = write_terms(filename:join(?LOCAL_CONFIG_DIR, "run.config"), RunTerms),
+            ok;
+
         {ok, Opts = #{experiment_definition := Definition}} ->
             {ok, DefinitionTerms} = file:consult(Definition),
-            Specs = materialize_experiments(DefinitionTerms),
+            Specs = materialize_experiments(?CONFIG_DIR, DefinitionTerms),
             run_experiments(Opts, Specs)
     end.
 
@@ -83,13 +99,13 @@ main(Args) ->
 %% Parse, materialize experiments
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec materialize_experiments([{atom(), term()}, ...]) -> [experiment_spec()].
-materialize_experiments(Definition) ->
+-spec materialize_experiments(string(), [{atom(), term()}, ...]) -> [experiment_spec()].
+materialize_experiments(ConfigDir, Definition) ->
     {cluster_template, ClusterTemplate} = lists:keyfind(cluster_template, 1, Definition),
     {run_template, RunTemplate} = lists:keyfind(run_template, 1, Definition),
     {experiments, Experiments} = lists:keyfind(experiments, 1, Definition),
-    {ok, ClusterTerms} = file:consult(filename:join([?CONFIG_DIR, ClusterTemplate])),
-    {ok, RunTerms} = file:consult(filename:join([?CONFIG_DIR, RunTemplate])),
+    {ok, ClusterTerms} = file:consult(filename:join([ConfigDir, ClusterTemplate])),
+    {ok, RunTerms} = file:consult(filename:join([ConfigDir, RunTemplate])),
     %% Don't use flatmap, only flattens one level deep
     lists:flatten(
         lists:map(
@@ -1121,6 +1137,8 @@ parse_args([[$- | Flag] | Args], Acc) ->
             parse_args(Args, Acc#{silent => true});
         [$d] ->
             parse_args(Args, Acc#{dry_run => true});
+        "-generate" ->
+            parse_flag(Flag, Args, fun(Arg) -> Acc#{generate_definition => Arg} end);
         "-experiment" ->
             parse_flag(Flag, Args, fun(Arg) -> Acc#{experiment_definition => Arg} end);
         [$h] ->
@@ -1139,11 +1157,11 @@ parse_flag(Flag, Args, Fun) ->
     end.
 
 required(Opts) ->
-    Required = [experiment_definition],
-    Valid = lists:all(fun(F) -> maps:is_key(F, Opts) end, Required),
-    case Valid of
-        false ->
-            {error, io_lib:format("Missing required fields: ~p", [Required])};
-        true ->
-            {ok, Opts}
+    case Opts of
+        #{generate_definition := _} ->
+            {ok, Opts};
+        #{experiment_definition := _} ->
+            {ok, Opts};
+        _ ->
+            {error, "Missing required --generate or --experiment flags"}
     end.
