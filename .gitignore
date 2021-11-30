@@ -1,6 +1,7 @@
 /results
 configuration/secret.config
 configuration/run.config
+configuration/cluster_definition.config
 *.sasl.txt
 *.beam
 *.pdf

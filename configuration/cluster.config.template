@@ -1,0 +1,13 @@
+{ext_tag, '_'}.
+{lasp_bench_rebar_profile, default}.
+{fault_tolerance_factor, 1}.
+{leader_cluster, '_'}.
+{master_node, 'apollo-1-1.imdea'}.
+{master_port, 7087}.
+{clusters, '_'}.
+{latencies, '_'}.
+{local_dc_pool_size, 1}.
+{ext_local_port, 7070}.
+{ext_dc_port, 8989}.
+{version_log_size, 25}.
+{ping_interval_ms, 100}.

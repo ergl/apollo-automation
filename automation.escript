@@ -28,6 +28,35 @@
 -define(TIMEOUT, timer:minutes(2)).
 -define(RETRIES, 5).
 
+-define(ALL_NODES,
+    [
+        %% Remove apollo-1-1 since its the master and experiment node
+        'apollo-1-2.imdea',
+        'apollo-1-3.imdea',
+        'apollo-1-4.imdea',
+        'apollo-1-5.imdea',
+        'apollo-1-6.imdea',
+        'apollo-1-7.imdea',
+        'apollo-1-8.imdea',
+        'apollo-1-9.imdea',
+        'apollo-1-10.imdea',
+        'apollo-1-11.imdea',
+        'apollo-1-12.imdea',
+        'apollo-2-1.imdea',
+        'apollo-2-2.imdea',
+        'apollo-2-3.imdea',
+        'apollo-2-4.imdea',
+        'apollo-2-5.imdea',
+        'apollo-2-6.imdea',
+        'apollo-2-7.imdea',
+        'apollo-2-8.imdea',
+        'apollo-2-9.imdea',
+        'apollo-2-10.imdea',
+        'apollo-2-11.imdea',
+        'apollo-2-12.imdea'
+    ]
+).
+
 -type experiment_spec() :: #{config := string(), results_folder := string(), run_terms := [{atom(), term()}, ...]}.
 
 usage() ->
@@ -56,25 +85,27 @@ main(Args) ->
 
 -spec materialize_experiments([{atom(), term()}, ...]) -> [experiment_spec()].
 materialize_experiments(Definition) ->
+    {cluster_template, ClusterTemplate} = lists:keyfind(cluster_template, 1, Definition),
     {run_template, RunTemplate} = lists:keyfind(run_template, 1, Definition),
     {experiments, Experiments} = lists:keyfind(experiments, 1, Definition),
-    {ok, Terms} = file:consult(filename:join([?CONFIG_DIR, RunTemplate])),
+    {ok, ClusterTerms} = file:consult(filename:join([?CONFIG_DIR, ClusterTemplate])),
+    {ok, RunTerms} = file:consult(filename:join([?CONFIG_DIR, RunTemplate])),
     %% Don't use flatmap, only flattens one level deep
     lists:flatten(
         lists:map(
-            fun(Exp) -> materialize_single_experiment(Terms, Exp) end,
+            fun(Exp) -> materialize_single_experiment(ClusterTerms, RunTerms, Exp) end,
             Experiments
         )
     ).
 
-materialize_single_experiment(Terms, Exp = #{clients := {M,F,A}}) ->
-    [ materialize_single_experiment(Terms, Exp#{clients => N}) || N <- apply(M, F, A) ];
+materialize_single_experiment(ClusterTerms, RunTerms, Exp = #{clients := {M,F,A}}) ->
+    [ materialize_single_experiment(ClusterTerms, RunTerms, Exp#{clients => N}) || N <- apply(M, F, A) ];
 
-materialize_single_experiment(Terms, Exp = #{clients := List})
+materialize_single_experiment(ClusterTerms, RunTerms, Exp = #{clients := List})
     when is_list(List) ->
-        [ materialize_single_experiment(Terms, Exp#{clients => N}) || N <- List ];
+        [ materialize_single_experiment(ClusterTerms, RunTerms, Exp#{clients => N}) || N <- List ];
 
-materialize_single_experiment(TemplateTerms, Experiment = #{clients := N})
+materialize_single_experiment(ClusterTerms, TemplateTerms, Experiment = #{clients := N})
     when is_integer(N) ->
         %% Sanity check
         Workers = erlang:max(N, 1),
@@ -82,33 +113,87 @@ materialize_single_experiment(TemplateTerms, Experiment = #{clients := N})
         % Set our number of threads
         TermsWithConcurrent = lists:keyreplace(concurrent, 1, TemplateTerms, {concurrent, Workers}),
 
+        ReplaceKeyFun =
+            fun(Key, Value, Acc) ->
+                lists:keyreplace(Key, 1, Acc, {Key, Value})
+            end,
+
         % Fill all template values from experiment definition
         ExperimentTerms =
-            maps:fold(
-                fun(Key, Value, Acc) ->
-                    lists:keyreplace(Key, 1, Acc, {Key, Value})
-                end,
-                TermsWithConcurrent,
-                maps:get(run_with, Experiment)
-            ),
+            maps:fold(ReplaceKeyFun, TermsWithConcurrent, maps:get(run_with, Experiment)),
+
+        % Fill all cluster template values from definition
+        RunOnTerms = maps:get(run_on, Experiment),
+        ConfigTerms =
+            case RunOnTerms of
+                #{clusters := ClusterMap} when is_map(ClusterMap) ->
+                    %% Cluster literal, translate as is
+                    maps:fold(ReplaceKeyFun, ClusterTerms, RunOnTerms);
+                #{clusters := ClusterList} when is_list(ClusterList) ->
+                    materialize_cluster_definition(RunOnTerms, ClusterTerms)
+            end,
 
         [
             #{
-                config => filename:join(?CONFIG_DIR, maps:get(config_file, Experiment)),
+                config_terms => ConfigTerms,
                 results_folder => maps:get(results_folder, Experiment),
                 run_terms => ExperimentTerms
             }
         ].
 
+materialize_cluster_definition(RunOnTerms, TemplateTerms) ->
+    SimpleReplacements = maps:without([clusters, partitions, per_partition], RunOnTerms),
+
+    Replicas = maps:get(clusters, RunOnTerms),
+    Clusters =
+        build_cluster_map(
+            Replicas,
+            maps:get(partitions, RunOnTerms),
+            maps:get(per_partition, RunOnTerms)
+        ),
+
+    maps:fold(
+        fun(Key, Value, Acc) ->
+            lists:keyreplace(Key, 1, Acc, {Key, Value})
+        end,
+        TemplateTerms,
+        SimpleReplacements#{clusters => Clusters, leader_cluster => hd(Replicas)}
+    ).
+
+build_cluster_map(Clusters, NPartitions, NClients) ->
+    RealClients =
+        case NClients of
+            auto ->
+                AvailableForClients = length(?ALL_NODES) - (NPartitions * length(Clusters)),
+                AvailableForClients div length(Clusters);
+            _ ->
+                NPartitions * NClients
+        end,
+    build_cluster_map(Clusters, NPartitions, RealClients, #{}, ?ALL_NODES).
+
+build_cluster_map([], _, _, Acc, _) ->
+    Acc;
+build_cluster_map([ClusterName | Rest], NP, NClients, Acc, Available0)
+    when not is_map_key(ClusterName, Acc) ->
+        {Servers, Available1} = lists:split(NP, Available0),
+        {Clients, Available2} = lists:split(NClients, Available1),
+        build_cluster_map(
+            Rest,
+            NP,
+            Clients,
+            Acc#{ClusterName => #{servers => Servers, clients => Clients}},
+            Available2
+        ).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Prepare experiment
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec cluster_config(experiment_spec()) -> string() | undefined.
+-spec cluster_config(experiment_spec()) -> [term()] | undefined.
 cluster_config(#{config := Config}) -> Config;
 cluster_config(_) -> undefined.
 
--spec get_next_cluster_config([experiment_spec()]) -> string() | undefined.
+-spec get_next_cluster_config([experiment_spec()]) -> [term()] | undefined.
 get_next_cluster_config([]) -> undefined;
 get_next_cluster_config([Head | _]) -> cluster_config(Head).
 
@@ -122,10 +207,10 @@ run_experiments(Opts, Specs) ->
 run_experiments(_, _, _, []) ->
     ok;
 
-run_experiments(Retries, Opts, LastCluster, [ Spec | Rest ]=AllSpecs) ->
+run_experiments(Retries, Opts, LastClusterTerms, [ Spec | Rest ]=AllSpecs) ->
     Result = execute_spec(
         Opts,
-        LastCluster,
+        LastClusterTerms,
         Spec,
         get_next_cluster_config(Rest),
         get_next_result_folder(Rest)
@@ -152,40 +237,42 @@ run_experiments(Retries, Opts, LastCluster, [ Spec | Rest ]=AllSpecs) ->
             error
     end.
 
-execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
-    #{config := ConfigFile, results_folder := Results, run_terms := RunTerms} = Spec,
+execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
+    #{config_terms := ConfigTerms, results_folder := Results, run_terms := RunTerms} = Spec,
 
     _ = ets:new(?CONF, [set, named_table]),
-    case catch preprocess_args(Opts, ConfigFile) of
+    case catch preprocess_args(Opts, ConfigTerms) of
         {'EXIT', TraceBack} ->
             ets:delete(?CONF),
             {fatal_error, TraceBack};
 
         {ClusterMap, Master} ->
+            ConfigFile = "cluster_definition.config",
             Result =
                 try
-                    case ConfigFile =:= PrevConfig of
+                    case ConfigTerms =:= PrevConfigTerms of
                         true ->
                             %% We're reusing the same cluster, no need to download anything.
                             %% Just check if something went wrong.
                             ok = check_nodes(Master, ClusterMap);
                         false ->
                             %% This is a new cluster, past spec cleaned up, so we need to re-download things
+                            ok = write_terms(filename:join(?CONFIG_DIR, ConfigFile), ConfigTerms),
                             ok = check_nodes(Master, ClusterMap),
-                            ok = push_scripts(filename:basename(ConfigFile), Master, ClusterMap),
+                            ok = push_scripts(ConfigFile, Master, ClusterMap),
 
                             ok = download_master(Master),
-                            ok = download_server(filename:basename(ConfigFile), ClusterMap),
+                            ok = download_server(ConfigFile, ClusterMap),
                             ok = download_lasp_bench(ClusterMap),
 
                             %% Set up any needed latencies
-                            ok = setup_latencies(filename:basename(ConfigFile), ClusterMap)
+                            ok = setup_latencies(ConfigFile, ClusterMap)
                     end,
 
                     %% Start things, re-sync NTP
                     ok = sync_nodes(Master, ClusterMap),
                     ok = start_master(Master),
-                    ok = start_server(filename:basename(ConfigFile), ClusterMap),
+                    ok = start_server(ConfigFile, ClusterMap),
 
                     %% Actual experiment: load then bench
                     ok = load_ext(Master, ClusterMap),
@@ -211,15 +298,15 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
 
                     %% Stop all nodes
                     ok = stop_master(Master),
-                    ok = stop_server(filename:basename(ConfigFile), ClusterMap),
+                    ok = stop_server(ConfigFile, ClusterMap),
 
-                    case ConfigFile =:= NextConfig of
+                    case ConfigTerms =:= NextConfigTerms of
                         true ->
                             %% Next experiment will reuse our cluster, no need to clean up
                             ok;
                         false ->
                             %% Clean up after the experiment
-                            ok = cleanup_latencies(filename:basename(ConfigFile), ClusterMap),
+                            ok = cleanup_latencies(ConfigFile, ClusterMap),
                             ok = cleanup_master(Master),
                             ok = cleanup_servers(ClusterMap),
                             ok = cleanup_clients(ClusterMap)
@@ -230,7 +317,7 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
                     error:Exception:Stack ->
                         %% An exception happened, clean up everything just in case
                         brutal_client_kill(ClusterMap),
-                        cleanup_latencies(filename:basename(ConfigFile), ClusterMap),
+                        cleanup_latencies(ConfigFile, ClusterMap),
                         cleanup_master(Master),
                         cleanup_servers(ClusterMap),
                         cleanup_clients(ClusterMap),
@@ -239,7 +326,7 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
                     throw:Term:Stack ->
                         %% An exception happened, clean up everything just in case
                         brutal_client_kill(ClusterMap),
-                        cleanup_latencies(filename:basename(ConfigFile), ClusterMap),
+                        cleanup_latencies(ConfigFile, ClusterMap),
                         cleanup_master(Master),
                         cleanup_servers(ClusterMap),
                         cleanup_clients(ClusterMap),
@@ -253,12 +340,11 @@ execute_spec(Opts, PrevConfig, Spec, NextConfig, NextResults) ->
 %% Set up experiment
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-preprocess_args(Opts, ConfigFile) ->
+preprocess_args(Opts, ConfigTerms) ->
     {ok, TokenTerms} = file:consult(?TOKEN_CONFIG),
     {token, Token} = lists:keyfind(token, 1, TokenTerms),
     true = ets:insert(?CONF, {token, Token}),
 
-    {ok, ConfigTerms} = file:consult(ConfigFile),
     {clusters, ClusterMap} = lists:keyfind(clusters, 1, ConfigTerms),
 
     {ext_tag, ExtTag} = lists:keyfind(ext_tag, 1, ConfigTerms),
