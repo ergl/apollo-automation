@@ -450,7 +450,7 @@ check_nodes(Master, ClusterMap) ->
 
     AllNodes = [Master | all_nodes(ClusterMap)],
 
-    UptimeRes = do_in_nodes_par("uptime", AllNodes, infinity),
+    UptimeRes = do_in_nodes_par("uptime", AllNodes, ?TIMEOUT),
     ok = lists:foldl(
         fun
             (_, {error, Node}) ->
@@ -472,12 +472,12 @@ check_nodes(Master, ClusterMap) ->
     _ = do_in_nodes_par(
         "echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
         AllNodes,
-        infinity
+        ?TIMEOUT
     ),
     GovernorStatus = do_in_nodes_par(
         "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
         AllNodes,
-        infinity
+        ?TIMEOUT
     ),
     ok = lists:foldl(
         fun
