@@ -306,6 +306,14 @@ ip_for_node("apollo-2-9") -> "10.10.5.69";
 ip_for_node("apollo-2-10") -> "10.10.5.70";
 ip_for_node("apollo-2-11") -> "10.10.5.71";
 ip_for_node("apollo-2-12") -> "10.10.5.72";
+ip_for_node("veleta1") -> "10.10.5.201";
+ip_for_node("veleta2") -> "10.10.5.202";
+ip_for_node("veleta3") -> "10.10.5.203";
+ip_for_node("veleta4") -> "10.10.5.204";
+ip_for_node("veleta5") -> "10.10.5.205";
+ip_for_node("veleta6") -> "10.10.5.206";
+ip_for_node("veleta7") -> "10.10.5.207";
+ip_for_node("veleta8") -> "10.10.5.208";
 ip_for_node([$i ,$p, $- | Rest]) ->
     %% For aws, node names are ip-XXX-XXX-XXX-XXX
     %% We trim ip- prefix and change the dashes with points

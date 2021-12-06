@@ -62,6 +62,19 @@
     ]
 ).
 
+% These nodes should be configured manually
+-define(BIG_NODES,
+    #{
+        'veleta1' => [],
+        'veleta2' => [],
+        'veleta3' => [],
+        'veleta4' => [],
+        'veleta5' => [],
+        'veleta6' => [],
+        'veleta7' => [],
+        'veleta8' => []
+    }).
+
 -type experiment_spec() :: #{config := string(), results_folder := string(), run_terms := [{atom(), term()}, ...]}.
 
 usage() ->
@@ -400,6 +413,19 @@ preprocess_args(Opts, ConfigTerms) ->
             ok
     end,
 
+    BigNodes = ordsets:from_list(maps:keys(?BIG_NODES)),
+    case ordsets:is_disjoint(Servers, BigNodes) of
+        false ->
+            io:fwrite(
+                standard_error,
+                "Bad cluster map: can't use veleta machines for servers~n",
+                []
+            ),
+            erlang:throw(veleta_servers);
+        true ->
+            ok
+    end,
+
     {master_node, Master} = lists:keyfind(master_node, 1, ConfigTerms),
     {master_port, MasterPort} = lists:keyfind(master_port, 1, ConfigTerms),
     case ordsets:is_element(Master, ordsets:union(Servers, Clients)) of
@@ -468,15 +494,25 @@ check_nodes(Master, ClusterMap) ->
         lists:zip(AllNodes, UptimeRes)
     ),
 
+    % Veleta nodes don't have scaling_governor available, skip them
+    NoVeletaNodes =
+        lists:filter(
+            fun
+                (N) when is_map_key(N, ?BIG_NODES) -> false;
+                (_) -> true
+            end,
+            AllNodes
+        ),
+
     % Set all nodes to performance governor status, then verify
     _ = do_in_nodes_par(
         "echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
-        AllNodes,
+        NoVeletaNodes,
         ?TIMEOUT
     ),
     GovernorStatus = do_in_nodes_par(
         "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
-        AllNodes,
+        NoVeletaNodes,
         ?TIMEOUT
     ),
     ok = lists:foldl(
@@ -493,7 +529,7 @@ check_nodes(Master, ClusterMap) ->
                 end
         end,
         ok,
-        lists:zip(AllNodes, GovernorStatus)
+        lists:zip(NoVeletaNodes, GovernorStatus)
     ),
     ok.
 

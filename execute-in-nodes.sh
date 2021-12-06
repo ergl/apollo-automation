@@ -32,26 +32,26 @@ doForNodes() {
 
     # same as `for node in "$@";`
     for node do
-        if [[ ! "${node}" =~ "imdea" ]]; then
-            echo "ERROR: Use fully qualified name for node ${node}"
-            exit 1
-        fi
-
-        if [[ "${dry_run}" -eq 1 ]]; then
-        echo ssh -i "${HOME}/.ssh/id_ed25519" -T \
-                -o ConnectTimeout=3 \
-                -o StrictHostKeyChecking=accept-new \
-                borja.deregil@"${node}" "${command}"
-        elif [[ "${par_for}" -eq 1 ]]; then
-            ssh -i "${HOME}/.ssh/id_ed25519" -T \
-                -o ConnectTimeout=3 \
-                -o StrictHostKeyChecking=accept-new \
-                borja.deregil@"${node}" "${command}" &
+        if [[ "${node}" =~ apollo-[1-2]-[1-12].imdea$ || "${node}" =~ ^veleta[1-8]$ ]]; then
+            if [[ "${dry_run}" -eq 1 ]]; then
+                echo ssh -i "${HOME}/.ssh/imdea_id_ed25519" -T \
+                        -o ConnectTimeout=3 \
+                        -o StrictHostKeyChecking=accept-new \
+                        borja.deregil@"${node}" "${command}"
+            elif [[ "${par_for}" -eq 1 ]]; then
+                ssh -i "${HOME}/.ssh/imdea_id_ed25519" -T \
+                    -o ConnectTimeout=3 \
+                    -o StrictHostKeyChecking=accept-new \
+                    borja.deregil@"${node}" "${command}" &
+            else
+                ssh -i "${HOME}/.ssh/imdea_id_ed25519" -T \
+                    -o ConnectTimeout=3 \
+                    -o StrictHostKeyChecking=accept-new \
+                    borja.deregil@"${node}" "${command}"
+            fi
         else
-            ssh -i "${HOME}/.ssh/id_ed25519" -T \
-                -o ConnectTimeout=3 \
-                -o StrictHostKeyChecking=accept-new \
-                borja.deregil@"${node}" "${command}"
+            echo "ERROR: Unknown node ${node}"
+            exit 1
         fi
     done
 

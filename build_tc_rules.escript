@@ -251,4 +251,12 @@ ip_addr_for_hostname("apollo-2-8") -> {10, 10, 5, 68};
 ip_addr_for_hostname("apollo-2-9") -> {10, 10, 5, 69};
 ip_addr_for_hostname("apollo-2-10") -> {10, 10, 5, 70};
 ip_addr_for_hostname("apollo-2-11") -> {10, 10, 5, 71};
-ip_addr_for_hostname("apollo-2-12") -> {10, 10, 5, 72}.
+ip_addr_for_hostname("apollo-2-12") -> {10, 10, 5, 72};
+ip_addr_for_hostname("veleta1") -> {10, 10, 5, 201};
+ip_addr_for_hostname("veleta2") -> {10, 10, 5, 202};
+ip_addr_for_hostname("veleta3") -> {10, 10, 5, 203};
+ip_addr_for_hostname("veleta4") -> {10, 10, 5, 204};
+ip_addr_for_hostname("veleta5") -> {10, 10, 5, 205};
+ip_addr_for_hostname("veleta6") -> {10, 10, 5, 206};
+ip_addr_for_hostname("veleta7") -> {10, 10, 5, 207};
+ip_addr_for_hostname("veleta8") -> {10, 10, 5, 208}.
