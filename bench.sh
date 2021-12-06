@@ -133,6 +133,7 @@ run () {
     local command="${1}"
     case $command in
         "download")
+            rm -rf "${HOME}/sources/lasp-bench"
             do_download "${branch}" "${HOME}/sources/lasp-bench"
             ;;
         "compile")
