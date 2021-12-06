@@ -860,17 +860,17 @@ cleanup_latencies(ConfigFile, ClusterMap) ->
     ).
 
 cleanup_master(Master) ->
-    io:format("~p~n", [do_in_nodes_seq("rm -rf sources; mkdir -p sources", [Master])]),
+    io:format("~p~n", [do_in_nodes_seq("rm -rf /home/borja.deregil/sources; mkdir -p /home/borja.deregil/sources", [Master])]),
     ok.
 
 cleanup_servers(ClusterMap) ->
     ServerNodes = server_nodes(ClusterMap),
-    io:format("~p~n", [do_in_nodes_par("rm -rf sources; mkdir -p sources", ServerNodes, infinity)]),
+    io:format("~p~n", [do_in_nodes_par("rm -rf /home/borja.deregil/sources; mkdir -p /home/borja.deregil/sources", ServerNodes, infinity)]),
     ok.
 
 cleanup_clients(ClusterMap) ->
     ClientNodes = client_nodes(ClusterMap),
-    io:format("~p~n", [do_in_nodes_par("rm -rf sources; mkdir -p sources", ClientNodes, infinity)]),
+    io:format("~p~n", [do_in_nodes_par("rm -rf /home/borja.deregil/sources; mkdir -p /home/borja.deregil/sources", ClientNodes, infinity)]),
     ok.
 
 pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath) ->
