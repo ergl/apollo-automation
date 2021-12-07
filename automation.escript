@@ -509,7 +509,7 @@ check_nodes(Master, ClusterMap) ->
                 case Res of
                     "" ->
                         ok;
-                    Other ->
+                    _ ->
                         {error, Node}
                 end
         end,
@@ -1057,7 +1057,7 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
 -spec home_path_for_node(string()) -> string().
 home_path_for_node(NodeStr) ->
     {ok, MP} = re:compile("apollo-*"),
-    case re:run(NodeStr) of
+    case re:run(NodeStr, MP) of
         {match, _} ->
             "/home/borja.deregil";
         nomatch ->
