@@ -715,12 +715,23 @@ brutal_client_kill(ClusterMap) ->
 
 download_lasp_bench(ClusterMap) ->
     NodeNames = client_nodes(ClusterMap),
-    case do_in_nodes_par(client_command("download"), NodeNames, ?TIMEOUT) of
+    DownloadRes = do_in_nodes_par_func(
+        fun(Node) -> client_command(Node, "download") end,
+        NodeNames,
+        ?TIMEOUT
+    ),
+    case DownloadRes of
         {error, DlReason} ->
             {error, DlReason};
         Print0 ->
             io:format("~p~n", [Print0]),
-            case do_in_nodes_par(client_command("compile"), NodeNames, ?TIMEOUT) of
+            CompileRes =
+                do_in_nodes_par_func(
+                    fun(Node) -> client_command(Node, "compile") end,
+                    NodeNames,
+                    ?TIMEOUT
+                ),
+            case CompileRes of
                 {error, CompReason} ->
                     {error, CompReason};
                 Print1 ->
@@ -756,19 +767,21 @@ load_ext(Master, ClusterMap) ->
             Res1 =
                 pmap(
                     fun({TargetReplica, ClientNode}) ->
+                        ClientNodeStr = atom_to_list(ClientNode),
                         Command = client_command(
+                            ClientNodeStr,
                             "-y load_ext",
                             atom_to_list(Master),
                             integer_to_list(MasterPort),
                             atom_to_list(TargetReplica),
                             filename:join(
-                                home_path_for_node(atom_to_list(ClientNode)),
+                                home_path_for_node(ClientNodeStr),
                                 "bench_properties.config"
                             )
                         ),
                         Cmd = io_lib:format(
                             "~s \"~s\" ~s",
-                            [?IN_NODES_PATH, Command, atom_to_list(ClientNode)]
+                            [?IN_NODES_PATH, Command, ClientNodeStr]
                         ),
                         safe_cmd(Cmd)
                     end,
@@ -805,13 +818,14 @@ bench_ext(Master, RunTerms, ClusterMap) ->
             Token = async_for(
                 fun(Node) ->
                     NodeStr = atom_to_list(Node),
+                    HomePath = home_path_for_node(NodeStr),
                     CPUPath = filename:join(
                         home_path_for_node(NodeStr),
                         io_lib:format("~s.cpu", [NodeStr])
                     ),
                     Cmd0 = io_lib:format(
-                        "./measure_cpu.escript ~b ~s",
-                        [RunsForMinutes, CPUPath]
+                        "~s/measure_cpu.escript ~b ~s",
+                        [HomePath, RunsForMinutes, CPUPath]
                     ),
                     Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Cmd0, NodeStr]),
                     safe_cmd(Cmd)
@@ -829,6 +843,7 @@ bench_ext(Master, RunTerms, ClusterMap) ->
                         "run.config"
                     ),
                     Command = client_command(
+                        NodeStr,
                         "run",
                         RunConfigPath,
                         Master,
@@ -982,7 +997,7 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
                 safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
 
                 %% Compress the results before returning, speeds up transfer
-                _ = do_in_nodes_seq(client_command("compress"), [Node]),
+                _ = do_in_nodes_seq(client_command(NodeStr, "compress"), [Node]),
 
                 %% Transfer results (-C compresses on flight)
                 safe_cmd(io_lib:format(
@@ -1111,15 +1126,20 @@ server_command(ConfigFile, Command, Arg) ->
         Arg
     ]).
 
-client_command(Command) ->
+client_command(NodeStr, Command) ->
     Profile = ets:lookup_element(?CONF, lasp_bench_rebar_profile, 2),
-    io_lib:format("./bench.sh -b ~s -p ~p ~s", [?LASP_BENCH_BRANCH, Profile, Command]).
-
-client_command(Command, Arg1, Arg2, Arg3, Arg4) ->
-    Profile = ets:lookup_element(?CONF, lasp_bench_rebar_profile, 2),
+    HomePath = home_path_for_node(NodeStr),
     io_lib:format(
-        "./bench.sh -b ~s -p ~p ~s ~s ~s ~s ~s",
-        [?LASP_BENCH_BRANCH, Profile, Command, Arg1, Arg2, Arg3, Arg4]
+        "~s/bench.sh -H ~s -b ~s -p ~p ~s",
+        [HomePath, HomePath, ?LASP_BENCH_BRANCH, Profile, Command]
+    ).
+
+client_command(NodeStr, Command, Arg1, Arg2, Arg3, Arg4) ->
+    Profile = ets:lookup_element(?CONF, lasp_bench_rebar_profile, 2),
+    HomePath = home_path_for_node(NodeStr),
+    io_lib:format(
+        "~s/bench.sh -H ~s -b ~s -p ~p ~s ~s ~s ~s ~s",
+        [HomePath, HomePath, ?LASP_BENCH_BRANCH, Profile, Command, Arg1, Arg2, Arg3, Arg4]
     ).
 
 transfer_script(Node, File) ->
@@ -1153,6 +1173,18 @@ do_in_nodes_par(Command, Nodes, Timeout) ->
     pmap(
         fun(Node) ->
             Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, atom_to_list(Node)]),
+            safe_cmd(Cmd)
+        end,
+        Nodes,
+        Timeout
+    ).
+
+do_in_nodes_par_func(Func, Nodes, Timeout) ->
+    pmap(
+        fun(Node) ->
+            NodeStr = atom_to_list(Node),
+            Command = Func(NodeStr),
+            Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, NodeStr]),
             safe_cmd(Cmd)
         end,
         Nodes,
