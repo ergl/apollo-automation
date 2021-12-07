@@ -8,6 +8,7 @@
 -define(SELF_DIR, "/home/borja.deregil/automation").
 -define(SSH_PRIV_KEY, "/home/borja.deregil/.ssh/id_ed25519").
 -define(RESULTS_DIR, "/home/borja.deregil/results").
+-define(VELETA_HOME, "/tmp/borja_experiments").
 
 -define(IN_NODES_PATH,
     unicode:characters_to_list(io_lib:format("~s/execute-in-nodes.sh", [?SELF_DIR]))
@@ -494,6 +495,28 @@ check_nodes(Master, ClusterMap) ->
         lists:zip(AllNodes, UptimeRes)
     ),
 
+    VeletaNodes =
+        lists:filter(fun(N) -> is_map_key(N, ?BIG_NODES) end, AllNodes),
+
+    SetUpHomeFolder =
+        do_in_nodes_par(io_lib:format("mkdir -p ~s", [?VELETA_HOME]), VeletaNodes, ?TIMEOUT),
+
+    ok = lists:foldl(
+        fun
+            (_, {error, Node}) ->
+                {error, Node};
+            ({Node, Res}, ok) ->
+                case Res of
+                    "" ->
+                        ok;
+                    Other ->
+                        {error, Node}
+                end
+        end,
+        ok,
+        lists:zip(VeletaNodes, SetUpHomeFolder)
+    ),
+
     % Veleta nodes don't have scaling_governor available, skip them
     NoVeletaNodes =
         lists:filter(
@@ -711,7 +734,10 @@ load_ext(Master, ClusterMap) ->
                             atom_to_list(Master),
                             integer_to_list(MasterPort),
                             atom_to_list(TargetReplica),
-                            "/home/borja.deregil/bench_properties.config"
+                            filename:join(
+                                home_path_for_node(atom_to_list(ClientNode)),
+                                "bench_properties.config"
+                            )
                         ),
                         Cmd = io_lib:format(
                             "~s \"~s\" ~s",
@@ -751,11 +777,16 @@ bench_ext(Master, RunTerms, ClusterMap) ->
 
             Token = async_for(
                 fun(Node) ->
-                    Cmd0 = io_lib:format(
-                        "./measure_cpu.escript ~b /home/borja.deregil/~s.cpu",
-                        [RunsForMinutes, atom_to_list(Node)]
+                    NodeStr = atom_to_list(Node),
+                    CPUPath = filename:join(
+                        home_path_for_node(NodeStr),
+                        io_lib:format("~s.cpu", [NodeStr])
                     ),
-                    Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Cmd0, atom_to_list(Node)]),
+                    Cmd0 = io_lib:format(
+                        "./measure_cpu.escript ~b ~s",
+                        [RunsForMinutes, CPUPath]
+                    ),
+                    Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Cmd0, NodeStr]),
                     safe_cmd(Cmd)
                 end,
                 all_nodes(ClusterMap)
@@ -765,14 +796,19 @@ bench_ext(Master, RunTerms, ClusterMap) ->
             BenchTimeout = timer:minutes(RunsForMinutes) + ?TIMEOUT,
             pmap(
                 fun({Replica, Node}) ->
+                    NodeStr = atom_to_list(Node),
+                    RunConfigPath = filename:join(
+                        home_path_for_node(NodeStr),
+                        "run.config"
+                    ),
                     Command = client_command(
                         "run",
-                        "/home/borja.deregil/run.config",
+                        RunConfigPath,
                         Master,
                         integer_to_list(MasterPort),
                         atom_to_list(Replica)
                     ),
-                    Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, atom_to_list(Node)]),
+                    Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, NodeStr]),
                     safe_cmd(Cmd)
                 end,
                 NodesWithReplicas,
@@ -843,7 +879,21 @@ cleanup_servers(ClusterMap) ->
 
 cleanup_clients(ClusterMap) ->
     ClientNodes = client_nodes(ClusterMap),
-    io:format("~p~n", [do_in_nodes_par("rm -rf /home/borja.deregil/sources; mkdir -p /home/borja.deregil/sources", ClientNodes, infinity)]),
+    Res = pmap(
+        fun(Node) ->
+            NodeStr = atom_to_list(Node),
+            Home = home_path_for_node(NodeStr),
+            Command = io_lib:format(
+                "rm -rf ~s/sources; mkdir -p ~s/sources",
+                [Home, Home]
+            ),
+            Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, NodeStr]),
+            safe_cmd(Cmd)
+        end,
+        ClientNodes,
+        infinity
+    ),
+    io:format("~p~n", [Res]),
     ok.
 
 pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath) ->
@@ -899,6 +949,7 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
         pmap(
             fun(Node) ->
                 NodeStr = atom_to_list(Node),
+                HomePathForNode = home_path_for_node(NodeStr),
                 TargetPath = filename:join([?RESULTS_DIR, Path, NodeStr]),
 
                 safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
@@ -908,19 +959,19 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
 
                 %% Transfer results (-C compresses on flight)
                 safe_cmd(io_lib:format(
-                    "scp -C -i ~s borja.deregil@~s:/home/borja.deregil/results.tar.gz ~s",
-                    [?SSH_PRIV_KEY, NodeStr, TargetPath]
+                    "scp -C -i ~s borja.deregil@~s:~s/results.tar.gz ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
                 )),
 
                 safe_cmd(io_lib:format(
-                    "scp -i ~s borja.deregil@~s:/home/borja.deregil/~s ~s",
-                    [?SSH_PRIV_KEY, NodeStr, ConfigFile, TargetPath]
+                    "scp -i ~s borja.deregil@~s:~s/~s ~s",
+                    [?SSH_PRIV_KEY, NodeStr, ConfigFile, HomePathForNode, TargetPath]
                 )),
 
                 %% Transfer CPU load file
                 safe_cmd(io_lib:format(
-                    "scp -i ~s borja.deregil@~s:/home/borja.deregil/~s.cpu ~s",
-                    [?SSH_PRIV_KEY, NodeStr, NodeStr, TargetPath]
+                    "scp -i ~s borja.deregil@~s:~s/~s.cpu ~s",
+                    [?SSH_PRIV_KEY, NodeStr, NodeStr, HomePathForNode, TargetPath]
                 )),
 
                 %% Rename configuration to cluster.config
@@ -930,8 +981,8 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
                 )),
 
                 safe_cmd(io_lib:format(
-                    "scp -i ~s borja.deregil@~s:/home/borja.deregil/bench_properties.config ~s",
-                    [?SSH_PRIV_KEY, NodeStr, TargetPath]
+                    "scp -i ~s borja.deregil@~s:~s/bench_properties.config ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
                 )),
 
                 %% Uncompress results
@@ -1003,6 +1054,17 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
 %% Util
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-spec home_path_for_node(string()) -> string().
+home_path_for_node(NodeStr) ->
+    {ok, MP} = re:compile("apollo-*"),
+    case re:run(NodeStr) of
+        {match, _} ->
+            "/home/borja.deregil";
+        nomatch ->
+            % Must be veleta
+            ?VELETA_HOME
+    end.
+
 master_command(Command) ->
     io_lib:format("./master.sh ~s", [Command]).
 
@@ -1040,9 +1102,10 @@ transfer_config(Node, File) ->
     transfer_from(Node, ?CONFIG_DIR, File).
 
 transfer_from(Node, Path, File) ->
+    NodeStr = atom_to_list(Node),
     Cmd = io_lib:format(
-        "scp -i ~s ~s/~s borja.deregil@~s:/home/borja.deregil",
-        [?SSH_PRIV_KEY, Path, File, atom_to_list(Node)]
+        "scp -i ~s ~s/~s borja.deregil@~s:~s",
+        [?SSH_PRIV_KEY, Path, File, NodeStr, home_path_for_node(NodeStr)]
     ),
     safe_cmd(Cmd).
 

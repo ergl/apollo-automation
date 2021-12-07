@@ -4,6 +4,15 @@ set -eo pipefail
 
 REPO_URL="https://github.com/ergl/lasp-bench.git"
 
+home_path_for_node() {
+    local node_name=$(uname -n)
+    if [[ "${node_name}" =~ ^veleta[1-8]$ ]]; then
+        echo "/tmp/borja_experiments"
+    else
+        echo "${HOME}"
+    fi
+}
+
 do_download() {
     local branch="${1}"
     local folder="${2}"
@@ -12,7 +21,8 @@ do_download() {
 
 do_compile() {
     local profile="${1}"
-    pushd "${HOME}/sources/lasp-bench"
+    local home_path=$(home_path_for_node)
+    pushd "${home_path}/sources/lasp-bench"
     ./rebar3 as "${profile}" compile
     ./rebar3 as "${profile}" escriptize
     popd
@@ -24,9 +34,10 @@ do_load_ext() {
     local target_port="${3}"
     local target_replica="${4}"
     local config_file="${5}"
+    local home_path=$(home_path_for_node)
 
     if [[ "${confirm_load}" -eq 1 ]]; then
-        pushd "${HOME}/sources/lasp-bench/scripts"
+        pushd "${home_path}/sources/lasp-bench/scripts"
         ./bench_load.escript \
             -a "${target_machine}" \
             -p "${target_port}" \
@@ -37,7 +48,7 @@ do_load_ext() {
         read -r -n 1 -p "Load target ${target_machine}:${target_port} ? [y/n] " response
         case "${response}" in
             [yY] )
-                pushd "${HOME}/sources/lasp-bench/scripts"
+                pushd "${home_path}/sources/lasp-bench/scripts"
                 ./bench_load.escript \
                     -a "${target_machine}" \
                     -p "${target_port}" \
@@ -54,7 +65,8 @@ do_load_ext() {
 
 do_rebuild() {
     local branch="${1}"
-    pushd "${HOME}/sources/lasp-bench"
+    local home_path=$(home_path_for_node)
+    pushd "${home_path}/sources/lasp-bench"
     git fetch origin
     git reset --hard origin/"${branch}"
     popd
@@ -62,10 +74,11 @@ do_rebuild() {
 
 do_compress() {
     local target
-    target=$(readlink -f "${HOME}/sources/lasp-bench/tests/current")
+    local home_path=$(home_path_for_node)
+    target=$(readlink -f "${home_path}/sources/lasp-bench/tests/current")
     target=$(basename "${target}")
-    pushd "${HOME}/sources/lasp-bench/tests/"
-    tar -czf "${HOME}/results.tar.gz" "${target}"
+    pushd "${home_path}/sources/lasp-bench/tests/"
+    tar -czf "${home_path}/results.tar.gz" "${target}"
     popd
 }
 
@@ -75,7 +88,8 @@ do_run() {
     local node="${3}"
     local port="${4}"
     local config="${5}"
-    pushd "${HOME}/sources/lasp-bench"
+    local home_path=$(home_path_for_node)
+    pushd "${home_path}/sources/lasp-bench"
     (
         export REPLICA_NAME="${replica}"; export MASTER_NODE="${node}"; export MASTER_PORT="${port}"; ./_build/"${profile}"/bin/lasp_bench "${config}"
     )
@@ -133,8 +147,9 @@ run () {
     local command="${1}"
     case $command in
         "download")
-            rm -rf "${HOME}/sources/lasp-bench"
-            do_download "${branch}" "${HOME}/sources/lasp-bench"
+            local home_path=$(home_path_for_node)
+            rm -rf "${home_path}/sources/lasp-bench"
+            do_download "${branch}" "${home_path}/sources/lasp-bench"
             ;;
         "compile")
             do_compile "${profile}"
