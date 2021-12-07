@@ -194,26 +194,53 @@ build_cluster_map(Clusters, NPartitions, NClients) ->
     RealClients =
         case NClients of
             auto ->
-                AvailableForClients = length(?ALL_NODES) - (NPartitions * length(Clusters)),
+                AvailableForClients =
+                    (length(?ALL_NODES) + maps:size(?BIG_NODES)) -
+                        (NPartitions * length(Clusters)),
                 AvailableForClients div length(Clusters);
             _ ->
                 NPartitions * NClients
         end,
-    build_cluster_map(Clusters, NPartitions, RealClients, #{}, ?ALL_NODES).
+    build_cluster_map(Clusters, NPartitions, RealClients, #{}, ?ALL_NODES, lists:sort(maps:keys(?BIG_NODES))).
 
-build_cluster_map([], _, _, Acc, _) ->
+build_cluster_map([], _, _, Acc, _, _) ->
     Acc;
-build_cluster_map([ClusterName | Rest], NP, NClients, Acc, Available0)
+build_cluster_map([ClusterName | Rest], NP, NClients, Acc, Available0, PreferenceClients0)
     when not is_map_key(ClusterName, Acc) ->
         {Servers, Available1} = lists:split(NP, Available0),
-        {Clients, Available2} = lists:split(NClients, Available1),
-        build_cluster_map(
-            Rest,
-            NP,
-            Clients,
-            Acc#{ClusterName => #{servers => Servers, clients => Clients}},
-            Available2
-        ).
+        case length(PreferenceClients0) of
+            N when N >= NClients ->
+                {Clients, PreferenceClients1} = lists:split(NClients, PreferenceClients0),
+                build_cluster_map(
+                    Rest,
+                    NP,
+                    NClients,
+                    Acc#{ClusterName => #{servers => Servers, clients => Clients}},
+                    Available1,
+                    PreferenceClients1
+                );
+            N when N > 0 ->
+                {Clients0, PreferenceClients1} = lists:split(N, PreferenceClients0),
+                {Clients1, Available2} = lists:split(NClients - N, Available1),
+                build_cluster_map(
+                    Rest,
+                    NP,
+                    NClients,
+                    Acc#{ClusterName => #{servers => Servers, clients => Clients0 ++ Clients1}},
+                    Available2,
+                    PreferenceClients1
+                );
+            0 ->
+                {Clients, Available2} = lists:split(NClients, Available1),
+                build_cluster_map(
+                    Rest,
+                    NP,
+                    NClients,
+                    Acc#{ClusterName => #{servers => Servers, clients => Clients}},
+                    Available2,
+                    PreferenceClients0
+                )
+        end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Prepare experiment
