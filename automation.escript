@@ -965,7 +965,7 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
 
                 safe_cmd(io_lib:format(
                     "scp -i ~s borja.deregil@~s:~s/~s ~s",
-                    [?SSH_PRIV_KEY, NodeStr, ConfigFile, HomePathForNode, TargetPath]
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, ConfigFile, TargetPath]
                 )),
 
                 %% Transfer CPU load file
