@@ -1013,7 +1013,7 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
                 %% Transfer CPU load file
                 safe_cmd(io_lib:format(
                     "scp -i ~s borja.deregil@~s:~s/~s.cpu ~s",
-                    [?SSH_PRIV_KEY, NodeStr, NodeStr, HomePathForNode, TargetPath]
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, NodeStr, TargetPath]
                 )),
 
                 %% Rename configuration to cluster.config
