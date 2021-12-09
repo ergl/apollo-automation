@@ -31,7 +31,7 @@
 -define(CONF, configuration).
 
 % 2 minute timeout for pmap
--define(TIMEOUT, timer:minutes(2)).
+-define(TIMEOUT, timer:minutes(10)).
 -define(RETRIES, 5).
 
 -define(ALL_NODES,
