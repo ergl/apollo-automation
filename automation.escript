@@ -831,7 +831,7 @@ bench_ext(Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s.cpu", [NodeStr])
                     ),
                     Cmd0 = io_lib:format(
-                        "~s/measure_cpu.escript -f ~s",
+                        "~s/measure_cpu.sh -f ~s",
                         [HomePath, CPUPath]
                     ),
                     timer:sleep(MeasureAt),
