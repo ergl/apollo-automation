@@ -597,7 +597,7 @@ push_scripts(ConfigFile, Master, ClusterMap) ->
                 transfer_script(Node, "build_tc_rules.escript"),
                 transfer_script(Node, "my_ip"),
                 transfer_script(Node, "fetch_gh_release.sh"),
-                transfer_script(Node, "measure_cpu.escript"),
+                transfer_script(Node, "measure_cpu.sh"),
                 transfer_config(Node, ConfigFile)
             end,
             AllNodes,
@@ -812,8 +812,15 @@ bench_ext(Master, RunTerms, ClusterMap) ->
 
             MasterPort = ets:lookup_element(?CONF, master_port, 2),
 
-            %% Set up measurements
+            %% Set up measurements. Sleep on instrumentation node for a bit, then send the script and collect metrics
             RunsForMinutes = proplists:get_value(duration, RunTerms),
+            MeasureAtMinute = RunsForMinutes / 2,
+            MeasureAt =
+                if MeasureAtMinute < 1 ->
+                    timer:seconds(trunc(MeasureAtMinute * 60));
+                true ->
+                    timer:minutes(trunc(MeasureAtMinute))
+                end,
 
             Token = async_for(
                 fun(Node) ->
@@ -824,9 +831,10 @@ bench_ext(Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s.cpu", [NodeStr])
                     ),
                     Cmd0 = io_lib:format(
-                        "~s/measure_cpu.escript ~b ~s",
-                        [HomePath, RunsForMinutes, CPUPath]
+                        "~s/measure_cpu.escript -f ~s",
+                        [HomePath, CPUPath]
                     ),
+                    timer:sleep(MeasureAt),
                     Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Cmd0, NodeStr]),
                     safe_cmd(Cmd)
                 end,
@@ -858,6 +866,7 @@ bench_ext(Master, RunTerms, ClusterMap) ->
             ),
 
             %% Ensure that measurements have terminated
+            %% TODO(borja): Since measure_cpu takes half the benchmark, this timeout should be tweaked.
             case async_for_receive(Token, ?TIMEOUT) of
                 {error, timeout} ->
                     {error, timeout};
