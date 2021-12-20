@@ -713,7 +713,7 @@ stop_server(ConfigFile, ClusterMap) ->
     end.
 
 brutal_client_kill(ClusterMap) ->
-    _ = do_in_nodes_par("pkill -9 runner_linux_amd64", client_nodes(ClusterMap), ?TIMEOUT),
+    _ = do_in_nodes_par("kill -9 \\$(pgrep -f runner_linux_amd64)", client_nodes(ClusterMap), ?TIMEOUT),
     ok.
 
 download_runner(ClusterMap) ->
