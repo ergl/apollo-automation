@@ -277,10 +277,10 @@ run_experiments(Retries, Opts, LastClusterTerms, [ Spec | Rest ]=AllSpecs) ->
             %% Start next spec with fresh retries
             run_experiments(?RETRIES, Opts, cluster_config(Spec), Rest);
 
-        {error, _} when Retries > 0 ->
+        {error, Reason} when Retries > 0 ->
             io:fwrite(
                 standard_error,
-                "Retrying spec error (~b/~b) on spec: ~n~p~n", [Retries, ?RETRIES, Spec]
+                "Retrying spec error ~p (~b/~b) on spec: ~n~p~n", [Reason, Retries, ?RETRIES, Spec]
             ),
             %% Retry again, with last cluster as undefined so that we can start from a clean slate
             run_experiments(Retries - 1, Opts, undefined, AllSpecs);
