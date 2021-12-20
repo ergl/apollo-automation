@@ -118,24 +118,25 @@ materialize_experiments(ConfigDir, Definition) ->
     {cluster_template, ClusterTemplate} = lists:keyfind(cluster_template, 1, Definition),
     {run_template, RunTemplate} = lists:keyfind(run_template, 1, Definition),
     {experiments, Experiments} = lists:keyfind(experiments, 1, Definition),
+    {load_configuration, LoadSpec} = lists:keyfind(load_configuration, 1, Definition),
     {ok, ClusterTerms} = file:consult(filename:join([ConfigDir, ClusterTemplate])),
     {ok, RunTerms} = file:consult(filename:join([ConfigDir, RunTemplate])),
     %% Don't use flatmap, only flattens one level deep
     lists:flatten(
         lists:map(
-            fun(Exp) -> materialize_single_experiment(ClusterTerms, RunTerms, Exp) end,
+            fun(Exp) -> materialize_single_experiment(ClusterTerms, RunTerms, LoadSpec, Exp) end,
             Experiments
         )
     ).
 
-materialize_single_experiment(ClusterTerms, RunTerms, Exp = #{clients := {M,F,A}}) ->
-    [ materialize_single_experiment(ClusterTerms, RunTerms, Exp#{clients => N}) || N <- apply(M, F, A) ];
+materialize_single_experiment(ClusterTerms, RunTerms, LoadSpec, Exp = #{clients := {M,F,A}}) ->
+    [ materialize_single_experiment(ClusterTerms, RunTerms, LoadSpec, Exp#{clients => N}) || N <- apply(M, F, A) ];
 
-materialize_single_experiment(ClusterTerms, RunTerms, Exp = #{clients := List})
+materialize_single_experiment(ClusterTerms, RunTerms, LoadSpec, Exp = #{clients := List})
     when is_list(List) ->
-        [ materialize_single_experiment(ClusterTerms, RunTerms, Exp#{clients => N}) || N <- List ];
+        [ materialize_single_experiment(ClusterTerms, RunTerms, LoadSpec, Exp#{clients => N}) || N <- List ];
 
-materialize_single_experiment(ClusterTerms, TemplateTerms, Experiment = #{clients := N})
+materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment = #{clients := N})
     when is_integer(N) ->
         %% Sanity check
         Workers = erlang:max(N, 1),
@@ -167,7 +168,8 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, Experiment = #{client
             #{
                 config_terms => ConfigTerms,
                 results_folder => maps:get(results_folder, Experiment),
-                run_terms => ExperimentTerms
+                run_terms => ExperimentTerms,
+                load_spec => LoadSpec
             }
         ].
 
