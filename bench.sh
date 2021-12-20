@@ -2,94 +2,64 @@
 
 set -eo pipefail
 
-REPO_URL="https://github.com/ergl/lasp-bench.git"
+RUNNER_BIN_NAME=runner_linux_amd64
+LOAD_BIN_NAME=load_linux_amd64
 
 do_download() {
-    local branch="${1}"
-    local folder="${2}"
-    git clone "${REPO_URL}" --single-branch --branch "${branch}" "${folder}"
-}
+    local home_directory="${1}"
+    local token="${2}"
+    local release_tag="${3}"
+    local folder="${4}"
 
-do_compile() {
-    local profile="${1}"
-    local home_directory="${2}"
-    pushd "${home_directory}/sources/lasp-bench"
-    ./rebar3 as "${profile}" compile
-    ./rebar3 as "${profile}" escriptize
+    pushd "${home_directory}"
+
+    mkdir -p "${folder}/${release_tag}"
+
+    GITHUB_API_TOKEN=${token} ./fetch_gh_release.sh -t "${release_tag}" -f "${RUNNER_BIN_NAME}"
+    chmod u+x "${RUNNER_BIN_NAME}"
+    mv "${RUNNER_BIN_NAME}" "${folder}/${release_tag}"
+
+    GITHUB_API_TOKEN=${token} ./fetch_gh_release.sh -t "${release_tag}" -f "${LOAD_BIN_NAME}"
+    chmod u+x "${LOAD_BIN_NAME}"
+    mv "${LOAD_BIN_NAME}" "${folder}/${release_tag}"
+
     popd
 }
 
 do_load_ext() {
     local home_directory="${1}"
-    local confirm_load="${2}"
-    local target_machine="${3}"
-    local target_port="${4}"
-    local target_replica="${5}"
-    local config_file="${6}"
 
+    local master_node="${2}"
+    local master_port="${3}"
 
-    if [[ "${confirm_load}" -eq 1 ]]; then
-        pushd "${home_directory}/sources/lasp-bench/scripts"
-        ./bench_load.escript \
-            -a "${target_machine}" \
-            -p "${target_port}" \
-            -r "${target_replica}" \
-            -c ext="${config_file}"
-        popd
-    else
-        read -r -n 1 -p "Load target ${target_machine}:${target_port} ? [y/n] " response
-        case "${response}" in
-            [yY] )
-                pushd "${home_directory}/sources/lasp-bench/scripts"
-                ./bench_load.escript \
-                    -a "${target_machine}" \
-                    -p "${target_port}" \
-                    -r "${target_replica}" \
-                    -c ext="${config_file}"
-                popd
-                ;;
-            *)
-                echo -e "\\nLoad aborted"
-                ;;
-        esac
-    fi
-}
+    local target_replica="${4}"
+    local key_number="${5}"
+    local value_bytes="${6}"
 
-do_rebuild() {
-    local branch="${1}"
-    local home_directory="${2}"
-    pushd "${home_directory}/sources/lasp-bench"
-    git fetch origin
-    git reset --hard origin/"${branch}"
-    popd
+    "${home_directory}"/sources/${tag}/${LOAD_BIN_NAME} \
+        -replica "${target_replica}" \
+        -master_ip "${master_node}" \
+        -master_port "${master_port}" \
+        -keys "${key_number}" \
+        -value_bytes "${value_bytes}"
 }
 
 do_compress() {
     local home_directory="${1}"
-    local target
-    target=$(readlink -f "${home_directory}/sources/lasp-bench/tests/current")
-    target=$(basename "${target}")
-    pushd "${home_directory}/sources/lasp-bench/tests/"
-    tar -czf "${home_directory}/results.tar.gz" "${target}"
-    popd
-}
+    local result_path="${2}"
 
-do_run() {
-    local home_directory="${1}"
-    local profile="${2}"
-    local replica="${3}"
-    local node="${4}"
-    local port="${5}"
-    local config="${6}"
-    pushd "${home_directory}/sources/lasp-bench"
-    (
-        export REPLICA_NAME="${replica}"; export MASTER_NODE="${node}"; export MASTER_PORT="${port}"; ./_build/"${profile}"/bin/lasp_bench "${config}"
-    )
+    local target_dir
+    local target_folder
+    target_dir=$(dirname "${result_path}")
+    target_folder=$(basename "${result_path}")
+
+    pushd "${target_dir}"
+    tar -czf "${home_directory}/results.tar.gz" "${target_folder}"
     popd
 }
 
 usage() {
-    echo "bench.sh [-hy] [-b <branch>=bench_ext] [-p <profile>=default] [-H <home>] download | compile | load_ext <master-node> <master-port> <replica> <config> | run <config> <master-node> <master-port> <replica> | rebuild | compress"
+    echo "bench.sh [-h] [-H <home>] [-T tag] download <token> | load_ext <master-node> <master-port> <replica> <keys> <value_bytes> | run <argument-string> | compress <path>"
 }
 
 run () {
@@ -98,11 +68,9 @@ run () {
         exit 1
     fi
 
-    local branch="bench_ext"
-    local profile="default"
     local home_directory="${HOME}"
-    local confirm_load=0
-    while getopts ":yb:p:H:h" opt; do
+    local tag
+    while getopts ":yT:H:h" opt; do
         case $opt in
             h)
                 usage
@@ -111,14 +79,8 @@ run () {
             H)
                 home_directory="${OPTARG}"
                 ;;
-            b)
-                branch="${OPTARG}"
-                ;;
-            p)
-                profile="${OPTARG}"
-                ;;
-            y)
-                confirm_load=1
+            T)
+                tag="${OPTARG}"
                 ;;
             :)
                 echo "Option -${OPTARG} requires an argument"
@@ -143,47 +105,48 @@ run () {
     local command="${1}"
     case $command in
         "download")
-            rm -rf "${home_directory}/sources/lasp-bench"
-            do_download "${branch}" "${home_directory}/sources/lasp-bench"
+            local token="${2}"
+            do_download "${home_directory}" "${token}" "${tag}" "${home_directory}/sources/"
             ;;
-        "compile")
-            do_compile "${profile}" "${home_directory}"
-            exit $?
-            ;;
+
         "load_ext")
-            if [[ $# -ne 5 ]]; then
+            if [[ $# -ne 6 ]]; then
                 usage
                 exit 1
             fi
             local master_node="${2}"
             local master_port="${3:-7087}"
             local bench_replica="${4}"
-            local config_file="${5}"
-            echo -e "Loading with ${config_file}\n"
-            do_load_ext "${home_directory}" "${confirm_load}" "${master_node}" "${master_port}" "${bench_replica}" "${config_file}"
+            local key_number="${5}"
+            local value_bytes="${6}"
+
+            echo -e "Loading ${bench_replica} with ${key_number} keys\n"
+            do_load_ext "${home_directory}" \
+                "${master_node}" \
+                "${master_port}" \
+                "${bench_replica}" \
+                "${key_number}" \
+                "${value_bytes}"
             ;;
+
         "run")
-            if [[ $# -ne 5 ]]; then
+            # Remove "run"
+            shift
+            echo -e "Running benchmark\n"
+            "${home_directory}"/sources/"${tag}"/"${RUNNER_BIN_NAME}" "${@}"
+            exit $?
+            ;;
+
+        "compress")
+            if [[ $# -ne 2 ]]; then
                 usage
                 exit 1
             fi
-            local run_config_file="${2}"
-            local master_node="${3}"
-            local master_port="${4:-7087}"
-            local bench_replica="${5}"
-            echo -e "Runnig with ${run_config_file}\n"
-            do_run "${home_directory}" "${profile}" "${bench_replica}" "${master_node}" "${master_port}" "${run_config_file}"
+            local result_path="${2}"
+            do_compress "${home_directory}" "${result_path}"
             exit $?
             ;;
-        "rebuild")
-            do_rebuild "${branch}" "${home_directory}"
-            do_compile "${profile}" "${home_directory}"
-            exit $?
-            ;;
-        "compress")
-            do_compress "${home_directory}"
-            exit $?
-            ;;
+
         *)
             echo "Unrecognized command ${command}"
             usage
