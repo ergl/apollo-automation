@@ -727,7 +727,12 @@ download_runner(ClusterMap) ->
         ?TIMEOUT
     ),
 
-    DownloadRes.
+    case DownloadRes of
+        {error, Reason} ->
+            {error, Reason};
+        _ ->
+            ok
+    end.
 
 load_ext(Master, ClusterMap, LoadSpec) ->
 
