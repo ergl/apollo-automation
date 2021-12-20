@@ -45,7 +45,7 @@ run () {
     local current_time
     date --iso-8601=ns > "${output}"
     # This results in a csv file with `cpu_number,load`, where load is defined as 100 - (idle %)
-    mpstat -P ALL 5 1 | grep Average | grep -v CPU | awk '
+    LC_ALL=C mpstat -P ALL 5 1 | grep Average | grep -v CPU | awk '
     BEGIN { max_nr=0 }
     {
         if ((NR-1) > max_nr) { max_nr = NR - 1 }
