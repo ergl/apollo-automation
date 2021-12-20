@@ -993,8 +993,12 @@ pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath)
     OpString =
         lists:foldl(
             fun
+                % Old format
                 ({Op, _}, "") -> io_lib:format("op_~s", [OpToString(Op)]);
-                ({Op, _}, Acc) -> io_lib:format("~s+op_~s", [Acc, OpToString(Op)])
+                ({Op, _}, Acc) -> io_lib:format("~s+op_~s", [Acc, OpToString(Op)]);
+                % New format
+                (Op, "") -> io_lib:format("op_~s", [OpToString(Op)]);
+                (Op, Acc) -> io_lib:format("~s+op_~s", [Acc, OpToString(Op)])
             end,
             "",
             proplists:get_value(operations, RunTerms, [])
