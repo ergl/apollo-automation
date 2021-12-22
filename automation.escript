@@ -987,6 +987,10 @@ pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath)
                 R = proplists:get_value(readonly_ops, RunTerms),
                 W = proplists:get_value(writeonly_ops, RunTerms),
                 io_lib:format("mixed_~b_~b", [R, W]);
+            (no_tx_read) ->
+                io_lib:format("no_tx_read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
+            (no_tx_read_with_id) ->
+                io_lib:format("no_tx_read_with_id_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (Other) ->
                 atom_to_list(Other)
         end,
