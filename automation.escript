@@ -948,6 +948,19 @@ bench_ext(Master, RunTerms, ClusterMap) ->
         all_nodes(ClusterMap)
     ),
 
+    %% Cleanup result path first
+    pmap(
+        fun({_, Node}) ->
+            NodeStr = atom_to_list(Node),
+            ResultPath = io_lib:format("~s/runner_results/current", [home_path_for_node(NodeStr)]),
+            Command = io_lib:format("rm -rf ~s", [ResultPath]),
+            Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, NodeStr]),
+            safe_cmd(Cmd)
+        end,
+        NodesWithReplicas,
+        ?TIMEOUT
+    ),
+
     %% Wait at least the same time that the benchmark is supposed to run
     BenchTimeout = timer:minutes(RunsForMinutes) + ?TIMEOUT,
     pmap(
