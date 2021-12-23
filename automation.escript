@@ -896,6 +896,10 @@ bench_ext(Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -writeKeys ~b", [Acc, N]);
                     {retry_aborts, true} ->
                         io_lib:format("~s -retryAbort", [Acc]);
+                    {key_distribution, uniform} ->
+                        io_lib:format("~s -distribution 0", [Acc]);
+                    {key_distribution, pareto} ->
+                        io_lib:format("~s -distribution 1", [Acc]);
                     {operations, OpList} ->
                         lists:foldl(
                             fun(Op, InnerAcc) ->

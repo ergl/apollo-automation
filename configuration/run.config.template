@@ -2,6 +2,7 @@
 {report_interval,1}.
 {concurrent,'_'}.
 
+{key_distribution, uniform}.
 {key_range, 1000000}.
 {value_bytes, 256}.
 {conn_pool_size, 12}.
