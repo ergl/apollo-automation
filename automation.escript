@@ -172,7 +172,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
         ].
 
 materialize_cluster_definition(RunOnTerms, TemplateTerms) ->
-    SimpleReplacements = maps:without([clusters, partitions, per_partition], RunOnTerms),
+    SimpleReplacements = maps:without([leaders, clusters, partitions, per_partition], RunOnTerms),
 
     Replicas = maps:get(clusters, RunOnTerms),
     Clusters =
@@ -182,12 +182,20 @@ materialize_cluster_definition(RunOnTerms, TemplateTerms) ->
             maps:get(per_partition, RunOnTerms)
         ),
 
+    LeadersOnTemplate = maps:get(leaders, RunOnTerms, undefined),
+    Leaders =
+        build_leaders_map(
+            maps:get(partitions, RunOnTerms),
+            maps:keys(Clusters),
+            LeadersOnTemplate
+        ),
+
     maps:fold(
         fun(Key, Value, Acc) ->
             lists:keyreplace(Key, 1, Acc, {Key, Value})
         end,
         TemplateTerms,
-        SimpleReplacements#{clusters => Clusters, leader_cluster => hd(Replicas)}
+        SimpleReplacements#{clusters => Clusters, leaders => Leaders}
     ).
 
 build_cluster_map(Clusters, NPartitions, NClients) ->
@@ -241,6 +249,74 @@ build_cluster_map([ClusterName | Rest], NP, NClients, Acc, Available0, Preferenc
                     PreferenceClients0
                 )
         end.
+
+build_leaders_map(Partitions, ReplicaList, undefined) ->
+    % If no leaders are specified, the leader for every partition is always the same
+    Leader = hd(lists:sort(ReplicaList)),
+    lists:foldl(
+        fun(Partition, Acc) ->
+            Acc#{(Partition-1) => Leader}
+        end,
+        #{},
+        lists:seq(1, Partitions)
+    );
+
+build_leaders_map(Partitions, Replicas, Leaders) when is_map(Leaders) ->
+    % Verify:
+    LeaderSize = maps:size(Leaders),
+    if
+        Partitions =/= LeaderSize ->
+            io:fwrite(
+                standard_error,
+                "Number of partitions (~b) and number of leaders (~b) doesn't match up!~n",
+                [Partitions, LeaderSize]
+            ),
+            throw(error);
+        true ->
+            % Check that there's no replica in Leaders that doesn't exist
+            ReplicaMap = lists:foldl(fun(R, M) -> M#{R => []} end, #{}, Replicas),
+            AnyStray =
+                lists:foldl(
+                    fun
+                        (_, {error, Stray}) ->
+                            {error, Stray};
+                        (R, ok) ->
+                            if is_map_key(R, ReplicaMap) -> ok; true -> {error, R} end
+                    end,
+                    ok,
+                    maps:values(Leaders)
+                ),
+            case AnyStray of
+                {error, Stray} ->
+                    io:fwrite(
+                        standard_error,
+                        "Unknown leader replica specified: ~p~n",
+                        [Stray]
+                    ),
+                    throw(error);
+                ok ->
+                    Leaders
+            end
+    end;
+
+build_leaders_map(Partitions, Replicas, Leader) when is_atom(Leader) ->
+    case lists:member(Leader, Replicas) of
+        true ->
+            lists:foldl(
+                fun(Partition, Acc) ->
+                    Acc#{(Partition-1) => Leader}
+                end,
+                #{},
+                lists:seq(1, Partitions)
+            );
+        false ->
+            io:fwrite(
+                standard_error,
+                "Unknown leader replica specified: ~p~n",
+                [Leader]
+            ),
+            throw(error)
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Prepare experiment
@@ -415,21 +491,14 @@ preprocess_args(Opts, ConfigTerms) ->
     {ext_local_port, LocalPort} = lists:keyfind(ext_local_port, 1, ConfigTerms),
     true = ets:insert(?CONF, {ext_local_port, LocalPort}),
 
+    {leaders, Leaders} = lists:keyfind(leaders, 1, ConfigTerms),
+    true = ets:insert(?CONF, {leaders, Leaders}),
+
     case lists:keyfind(cpu_profile, 1, ConfigTerms) of
         false ->
             ok;
         {cpu_profile, ProfilePath} ->
             true = ets:insert(?CONF, {cpu_profile, ProfilePath})
-    end,
-
-    {leader_cluster, LeaderCluster} = lists:keyfind(leader_cluster, 1, ConfigTerms),
-    case maps:is_key(LeaderCluster, ClusterMap) of
-        false ->
-            io:fwrite(standard_error, "Bad cluster map: leader cluster not present ~n", []),
-            erlang:throw(bad_master);
-        true ->
-            true = ets:insert(?CONF, {leader_cluster, LeaderCluster}),
-            ok
     end,
 
     Servers = ordsets:from_list(server_nodes(ClusterMap)),
@@ -632,7 +701,7 @@ sync_nodes(Master, ClusterMap) ->
 download_master(Master) ->
     AuthToken = ets:lookup_element(?CONF, token, 2),
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
-    case do_in_nodes_par(master_command("download", AuthToken, GitTag), [Master], ?TIMEOUT) of
+    case do_in_nodes_par(master_command(GitTag, "download", AuthToken), [Master], ?TIMEOUT) of
         {error, Reason} ->
             {error, Reason};
         Print ->
@@ -642,17 +711,30 @@ download_master(Master) ->
 
 start_master(Master) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
-    Leader = ets:lookup_element(?CONF, leader_cluster, 2),
     NumReplicas = ets:lookup_element(?CONF, n_replicas, 2),
     NumPartitions = ets:lookup_element(?CONF, n_partitions, 2),
+
+    % Build the arguments for master
+    LeaderSpec =
+        maps:fold(
+            fun(Partition, Replica, Acc) ->
+                io_lib:format(
+                    "-leader ~b:~s ~s",
+                    [Partition, atom_to_list(Replica), Acc]
+                )
+            end,
+            "",
+            ets:lookup_element(?CONF, leaders, 2)
+        ),
+
     case
         do_in_nodes_par(
                 master_command(
+                    GitTag,
                     "run",
-                    atom_to_list(Leader),
                     integer_to_list(NumReplicas),
                     integer_to_list(NumPartitions),
-                    GitTag
+                    LeaderSpec
                 ),
                 [Master],
                 ?TIMEOUT
@@ -666,7 +748,8 @@ start_master(Master) ->
     end.
 
 stop_master(Master) ->
-    case do_in_nodes_par(master_command("stop"), [Master], ?TIMEOUT) of
+    GitTag = ets:lookup_element(?CONF, ext_tag, 2),
+    case do_in_nodes_par(master_command(GitTag, "stop"), [Master], ?TIMEOUT) of
         {error, _} ->
             error;
         _ ->
@@ -1138,14 +1221,14 @@ home_path_for_node(NodeStr) ->
             ?VELETA_HOME
     end.
 
-master_command(Command) ->
-    io_lib:format("./master.sh ~s", [Command]).
+master_command(GitTag, Command) ->
+    io_lib:format("./master.sh -T ~s ~s", [GitTag, Command]).
 
-master_command(Command, Arg1, Arg2) ->
-    io_lib:format("./master.sh ~s ~s ~s", [Command, Arg1, Arg2]).
+master_command(GitTag, Command, Arg1) ->
+    io_lib:format("./master.sh -T ~s ~s ~s", [GitTag, Command, Arg1]).
 
-master_command(Command, Arg1, Arg2, Arg3, Arg4) ->
-    io_lib:format("./master.sh ~s ~s ~s ~s ~s", [Command, Arg1, Arg2, Arg3, Arg4]).
+master_command(GitTag, Command, Arg1, Arg2, Arg3) ->
+    io_lib:format("./master.sh -T ~s ~s ~s ~s ~s", [GitTag, Command, Arg1, Arg2, Arg3]).
 
 server_command(ConfigFile, Command) ->
     io_lib:format("./server.escript -v -f /home/borja.deregil/~s -c ~s", [ConfigFile, Command]).

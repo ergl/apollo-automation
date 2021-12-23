@@ -5,7 +5,7 @@ set -eo pipefail
 BIN_NAME=master_linux_amd64
 
 usage() {
-    echo "master.sh [-h] download <token> <tag> | run <leader-replica> <replicas> <partitions> <tag> | stop"
+    echo "master.sh [-h] [-T tag] download <token> | run <replicas> <partitions> [leader spec ...] | stop"
 }
 
 do_download() {
@@ -18,27 +18,21 @@ do_download() {
     mv "${BIN_NAME}" "${folder}/${release_tag}"
 }
 
-do_run() {
-    local leader="${1}"
-    local replicas="${2}"
-    local partitions="${3}"
-    local tag="${4}"
-    screen -dmSL \
-        "${BIN_NAME}" \
-        "${HOME}"/sources/${tag}/${BIN_NAME} -leader "${leader}" -n "${replicas}" -p "${partitions}"
-}
-
 run () {
     if [[ $# -eq 0 ]]; then
         usage
         exit 1
     fi
 
-    while getopts ":h" opt; do
+    local tag
+    while getopts ":hT:" opt; do
         case $opt in
             h)
                 usage
                 exit 0
+                ;;
+            T)
+                tag="${OPTARG}"
                 ;;
             *)
                 echo "Unrecognized option -${OPTARG}"
@@ -59,16 +53,21 @@ run () {
     case $command in
         "download")
             local token="${2}"
-            local tag="${3}"
             do_download "${token}" "${tag}" "${HOME}/sources/"
             ;;
         "run")
-            local leader_replica="${2}"
-            local replicas="${3}"
-            local partitions="${4}"
-            local tag="${5}"
-            echo -e "Runnig master with leader ${leader_replica} (${partitions} partitions)\n"
-            do_run "${leader_replica}" "${replicas}" "${partitions}" "${tag}"
+            # Remove "run"
+            shift
+            local replicas="${1}"
+            shift
+            local partitions="${1}"
+            shift
+            echo -e "Runnig master with ${partitions} partitions and ${replicas} replicas\n"
+
+            screen -dmSL \
+                "${BIN_NAME}" \
+                "${HOME}"/sources/${tag}/${BIN_NAME} -n "${replicas}" -p "${partitions}" "${@}"
+
             exit $?
             ;;
         "stop")

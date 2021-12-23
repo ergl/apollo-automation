@@ -1,8 +1,8 @@
 {ext_tag, '_'}.
 {fault_tolerance_factor, 1}.
-{leader_cluster, '_'}.
 {master_node, 'apollo-1-1.imdea'}.
 {master_port, 7087}.
+{leaders, '_'}.
 {clusters, '_'}.
 {latencies, #{}}.
 {local_dc_pool_size, 1}.
