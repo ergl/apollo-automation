@@ -68,10 +68,10 @@
         'veleta2' => [],
         'veleta3' => [],
         'veleta4' => [],
-        'veleta5' => [],
-        'veleta6' => [],
-        'veleta7' => [],
-        'veleta8' => []
+        % 'veleta5' => [],
+        'veleta6' => []
+        % 'veleta7' => [],
+        % 'veleta8' => []
     }).
 
 -type experiment_spec() :: #{config := string(), results_folder := string(), run_terms := [{atom(), term()}, ...]}.
@@ -207,7 +207,7 @@ build_cluster_map(Clusters, NPartitions, NClients) ->
                         (NPartitions * length(Clusters)),
                 AvailableForClients div length(Clusters);
             _ ->
-                NPartitions * NClients
+                trunc(NPartitions * NClients)
         end,
     build_cluster_map(Clusters, NPartitions, RealClients, #{}, ?ALL_NODES, lists:sort(maps:keys(?BIG_NODES))).
 
