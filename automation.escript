@@ -68,10 +68,10 @@
         'veleta2' => [],
         'veleta3' => [],
         'veleta4' => [],
-        % 'veleta5' => [],
-        'veleta6' => []
-        % 'veleta7' => [],
-        % 'veleta8' => []
+        'veleta5' => [],
+        'veleta6' => [],
+        'veleta7' => [],
+        'veleta8' => []
     }).
 
 -type experiment_spec() :: #{config := string(), results_folder := string(), run_terms := [{atom(), term()}, ...]}.
