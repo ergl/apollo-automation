@@ -8,5 +8,4 @@
 {local_dc_pool_size, 1}.
 {ext_local_port, 7070}.
 {ext_dc_port, 8989}.
-{version_log_size, 25}.
 {ping_interval_ms, 100}.

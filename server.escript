@@ -132,8 +132,6 @@ start_ext(Replica, Config) ->
     PORT = get_config_key(ext_local_port, Config, ?DEFAULT_LISTEN_PORT),
     INTER_DC_PORT = get_config_key(ext_dc_port, Config, ?DEFAULT_INTER_DC_PORT),
 
-    VSN_LOG_SIZE = get_config_key(version_log_size, Config, ?DEFAULT_LOG_SIZE),
-
     PING_INTERVAL_MS = get_config_key(
         ping_interval_ms,
         Config,
@@ -151,7 +149,7 @@ start_ext(Replica, Config) ->
     LOG_FILE = get_log_file(LogPath),
 
     ArgString0 = io_lib:format(
-        "-replica ~s -ip ~s -port ~b -replPort ~b -mIp ~s -mPort ~b -versions ~b -pingMs ~b -f ~b -log ~s -log_level ~b",
+        "-replica ~s -ip ~s -port ~b -replPort ~b -mIp ~s -mPort ~b -pingMs ~b -f ~b -log ~s -log_level ~b",
         [
             Replica,
             IP,
@@ -159,7 +157,6 @@ start_ext(Replica, Config) ->
             INTER_DC_PORT,
             MASTER_NODE,
             MASTER_PORT,
-            VSN_LOG_SIZE,
             PING_INTERVAL_MS,
             FAULT_TOLERANCE_FACTOR,
             LOG_FILE,
