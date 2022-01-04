@@ -779,6 +779,7 @@ download_server(ConfigFile, ClusterMap) ->
     end.
 
 start_server(ConfigFile, ClusterMap) ->
+    remove_server_logs(ClusterMap),
     maps:fold(
         fun
             (_, _, error) ->
@@ -796,6 +797,19 @@ start_server(ConfigFile, ClusterMap) ->
         end,
         ok,
         ClusterMap
+    ).
+
+remove_server_logs(ClusterMap) ->
+    pmap(
+        fun(Node) ->
+            NodeStr = atom_to_list(Node),
+            LogPath = io_lib:format("~s/screenlog.0", [home_path_for_node(NodeStr)]),
+            Command = io_lib:format("rm -rf ~s", [LogPath]),
+            Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, NodeStr]),
+            safe_cmd(Cmd)
+        end,
+        server_nodes(ClusterMap),
+        ?TIMEOUT
     ).
 
 stop_server(ConfigFile, ClusterMap) ->
@@ -1188,18 +1202,27 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
         pmap(
             fun(Node) ->
                 NodeStr = atom_to_list(Node),
-                TargetFile = filename:join([?RESULTS_DIR, Path, io_lib:format("~s.log", [NodeStr])]),
+                HomePathForNode = home_path_for_node(NodeStr),
+                TargetPath = filename:join([?RESULTS_DIR, Path, NodeStr]),
+
+                safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
 
                 %% Transfer logs (-C compresses on flight)
                 safe_cmd(io_lib:format(
-                    "scp -C -i ~s borja.deregil@~s:/home/borja.deregil/~s.log ~s",
-                    [?SSH_PRIV_KEY, NodeStr, NodeStr, TargetFile]
+                    "scp -C -i ~s borja.deregil@~s:~s/~s.log ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, NodeStr, TargetPath]
                 )),
 
                 %% Transfer CPU load file
                 safe_cmd(io_lib:format(
-                    "scp -i ~s borja.deregil@~s:/home/borja.deregil/~s.cpu ~s",
-                    [?SSH_PRIV_KEY, NodeStr, NodeStr, filename:dirname(TargetFile)]
+                    "scp -i ~s borja.deregil@~s:~s/~s.cpu ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, NodeStr, TargetPath]
+                )),
+
+                %% Transfer screenlog file
+                safe_cmd(io_lib:format(
+                    "scp -i ~s borja.deregil@~s:~s/screenlog.0 ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
                 )),
 
                 ok
