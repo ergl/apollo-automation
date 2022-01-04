@@ -4,6 +4,9 @@
 
 -export([main/1]).
 
+-type latencies() :: #{atom() => [tuple()]}.
+-type latencies_graph() :: digraph:graph().
+
 -define(LOCAL_SELF_DIR, "/Users/ryan/dev/imdea/code/automation").
 -define(SELF_DIR, "/home/borja.deregil/automation").
 -define(SSH_PRIV_KEY, "/home/borja.deregil/.ssh/id_ed25519").
@@ -80,7 +83,7 @@ usage() ->
     Name = filename:basename(escript:script_name()),
     ok = io:fwrite(
         standard_error,
-        "Usage: ~s [-ds] --generate <experiment-definition> | --experiment <experiment-definition>~n",
+        "Usage: ~s [-ds] --latencies <experiment-definition> | --generate <experiment-definition> | --experiment <experiment-definition>~n",
         [Name]
     ).
 
@@ -100,6 +103,15 @@ main(Args) ->
             ok = write_terms(filename:join(?LOCAL_CONFIG_DIR, "cluster_definition.config"), ConfigTerms),
             ok = write_terms(filename:join(?LOCAL_CONFIG_DIR, "run.config"), RunTerms),
             ok;
+
+        {ok, #{show_latencies := Definition}} ->
+            {ok, DefinitionTerms} = file:consult(Definition),
+            Specs0 = materialize_experiments(?LOCAL_CONFIG_DIR, DefinitionTerms),
+            Specs1 = dedup_specs_for_latencies(Specs0),
+            io:format(
+                "experiment, partitions, quorum_size, at_partition, at_region, commit_latency, delivery_latency\n"
+            ),
+            show_latencies(Specs1);
 
         {ok, Opts = #{experiment_definition := Definition}} ->
             {ok, DefinitionTerms} = file:consult(Definition),
@@ -1225,6 +1237,247 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Show Latencies
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+get_config_key(Key, Config, Default) ->
+    case lists:keyfind(Key, 1, Config) of
+        false -> Default;
+        {Key, Value} -> Value
+    end.
+
+dedup_specs_for_latencies(Specs) ->
+    dedup_specs_for_latencies(Specs, #{}, []).
+
+dedup_specs_for_latencies([], _, Acc) ->
+    lists:reverse(Acc);
+
+dedup_specs_for_latencies([Spec | Rest], Prev, Acc0) ->
+    #{
+        results_folder := ExperimentName,
+        config_terms := ConfigTerms
+    } = Spec,
+    PrevName = maps:get(results_folder, Prev, ""),
+    Normalized = lists:usort(ConfigTerms),
+    PrevNormalized = lists:usort(maps:get(config_terms, Prev, [])),
+    Acc =
+        if
+            (ExperimentName =/= PrevName) orelse (Normalized =/= PrevNormalized) ->
+                [Spec | Acc0];
+            true ->
+                Acc0
+        end,
+    dedup_specs_for_latencies(Rest, Spec, Acc).
+
+show_latencies([]) ->
+    ok;
+
+show_latencies([ #{ results_folder := ExpName, config_terms := Config } | Rest]) ->
+    FaultTolerance = get_config_key(fault_tolerance_factor, Config, 1),
+    QuorumSize = FaultTolerance + 1,
+    {_, Leaders} = lists:keyfind(leaders, 1, Config),
+    {_, Latencies} = lists:keyfind(latencies, 1, Config),
+    if
+        map_size(Latencies) == 0 ->
+            show_latencies(Rest);
+
+        true ->
+            TotalPartitions = map_size(Leaders),
+            case lists:usort(maps:values(Leaders)) of
+                [Leader] ->
+                    show_latencies_for_partition(ExpName, TotalPartitions, undefined, Leader, Latencies, QuorumSize);
+                _ ->
+                    lists:foreach(
+                        fun({Partition, Leader}) ->
+                            show_latencies_for_partition(ExpName, TotalPartitions, Partition, Leader, Latencies, QuorumSize)
+                        end,
+                        maps:to_list(Leaders)
+                    )
+            end,
+            show_latencies(Rest)
+    end.
+
+show_latencies_for_partition(ExpName, TotalPartitions, Partition, Leader, Latencies, QuorumSize) ->
+    PartitionStr =
+        case Partition of
+            undefined -> "all";
+            _ -> io_lib:format("~b", [Partition])                
+        end,
+    lists:foreach(
+        fun(Region) ->
+            MinCommitLat = compute_commit_latency(Region, Leader, Latencies, QuorumSize),
+            MinDeliveryLat = 2 * to_leader_latency(Region, Leader, Latencies),
+            io:format(
+                "~s, ~b, ~b ~s, ~s, ~b, ~b\n",
+                [ExpName, TotalPartitions, QuorumSize, PartitionStr, Region, MinCommitLat, MinDeliveryLat]
+            )
+        end,
+        maps:keys(Latencies)
+    ).
+
+-spec compute_commit_latency(atom(), atom(), latencies(), non_neg_integer()) -> non_neg_integer().
+compute_commit_latency(Leader, Leader, _, 1) ->
+    0;
+compute_commit_latency(Leader, Leader, Latencies, Q) ->
+    compute_minimal_quorum_rtt(Leader, Latencies, Q);
+compute_commit_latency(Region, LeaderRegion, Latencies, Q) when Region =/= LeaderRegion ->
+    compute_follower_latency(Region, LeaderRegion, Latencies, Q).
+
+-spec compute_minimal_quorum_rtt(
+    At :: atom(),
+    Latencies :: latencies(),
+    QuorumSize :: non_neg_integer()
+) -> non_neg_integer().
+
+compute_minimal_quorum_rtt(At, Latencies, Q) ->
+    %% Q - 1 to skip ourselves
+    compute_minimal_quorum_rtt(At, Latencies, Q - 1, min_half_rtt(At, Latencies, 0)).
+
+-spec compute_minimal_quorum_rtt(
+    At :: atom(),
+    Latencies :: latencies(),
+    N :: non_neg_integer(),
+    MinLinks :: {non_neg_integer(), non_neg_integer()}
+) -> non_neg_integer().
+
+compute_minimal_quorum_rtt(At, Latencies, Q, {MinCount, MinSoFar}) ->
+    case Q of
+        1 ->
+            MinSoFar * 2;
+        N when N =< MinCount ->
+            %% Quorum size is less than the amount of paths with the same latency, so we know we will
+            %% commit with that latency.
+            MinSoFar * 2;
+        _ ->
+            %% We can skip MinCount replicas, they all have the same latency.
+            %% We know that there's at least one replica left to get a quorum
+            compute_minimal_quorum_rtt(
+                At,
+                Latencies,
+                (Q - MinCount),
+                min_half_rtt(At, Latencies, MinSoFar)
+            )
+    end.
+
+-spec compute_follower_latency(atom(), atom(), latencies(), non_neg_integer()) -> non_neg_integer().
+compute_follower_latency(At, Leader, Latencies, Q) ->
+    ToLeader = to_leader_latency(At, Leader, Latencies),
+    G = config_to_digraph(Latencies),
+    compute_follower_latency(At, Leader, G, Q - 1, ToLeader, shortest_latency(Leader, At, G, 0)).
+
+-spec compute_follower_latency(
+    At :: atom(),
+    Leader :: atom(),
+    LatGraph :: latencies_graph(),
+    QuorumSize :: non_neg_integer(),
+    ToLeaderLatency :: non_neg_integer(),
+    MinLinks :: {non_neg_integer(), non_neg_integer()}
+) -> non_neg_integer().
+
+compute_follower_latency(At, Leader, G, Q, ToLeader, {MinCount, MinSoFar}) ->
+    case Q of
+        1 ->
+            MinSoFar + ToLeader;
+        M when M =< MinCount ->
+            MinSoFar + ToLeader;
+        _ ->
+            compute_follower_latency(
+                At,
+                Leader,
+                G,
+                (Q - MinCount),
+                ToLeader,
+                shortest_latency(Leader, At, G, MinSoFar)
+            )
+    end.
+
+% @doc Get the latency of the min path from `At` to any other site, but bigger than `Min`.
+%  If X paths have the same latency M, return {X, M}
+-spec min_half_rtt(atom(), latencies(), non_neg_integer()) ->
+    {non_neg_integer(), non_neg_integer()}.
+min_half_rtt(At, Latencies, Threshold) ->
+    lists:foldl(
+        fun
+            ({_, Lat}, {Count, MinLat}) when Lat =< MinLat andalso Lat > Threshold ->
+                {Count + 1, Lat};
+            (_, Acc) ->
+                Acc
+        end,
+        {0, undefined},
+        maps:get(At, Latencies)
+    ).
+
+-spec to_leader_latency(atom(), atom(), latencies()) -> non_neg_integer().
+to_leader_latency(Leader, Leader, _) ->
+    0;
+to_leader_latency(Region, Leader, Latencies) ->
+    #{Region := Targets} = Latencies,
+    {Leader, LatencyToLeader} = lists:keyfind(Leader, 1, Targets),
+    LatencyToLeader.
+
+-spec config_to_digraph(latencies()) -> latencies_graph().
+config_to_digraph(Latencies) ->
+    G = digraph:new(),
+    _ = [digraph:add_vertex(G, K) || K <- maps:keys(Latencies)],
+    maps:fold(
+        fun(K, Targets, Acc) ->
+            [digraph:add_edge(G, K, T, L) || {T, L} <- Targets],
+            Acc
+        end,
+        G,
+        Latencies
+    ).
+
+-spec shortest_latency(
+    From :: atom(),
+    To :: atom(),
+    Digraph :: latencies_graph(),
+    Min :: non_neg_integer()
+) -> {non_neg_integer(), non_neg_integer()}.
+
+shortest_latency(From, To, Digraph, Min) ->
+    shortest_latency(From, To, Digraph, #{From => []}, 0, Min).
+
+-spec shortest_latency(
+    From :: atom(),
+    To :: atom(),
+    Digraph :: latencies_graph(),
+    Visited :: #{atom() => []},
+    Cost :: non_neg_integer(),
+    Min :: non_neg_integer()
+) -> non_neg_integer().
+
+shortest_latency(From, To, Digraph, Visited, Cost, Min) ->
+    lists:foldl(
+        fun(E, {Count, Acc}) ->
+            {ChildCount, Total} =
+                case digraph:edge(Digraph, E) of
+                    {_, From, To, Lat} ->
+                        {1, Cost + Lat};
+                    {_, From, Neigh, Lat} when not is_map_key(Neigh, Visited) ->
+                        shortest_latency(
+                            Neigh,
+                            To,
+                            Digraph,
+                            Visited#{Neigh => []},
+                            Cost + Lat,
+                            Min
+                        );
+                    _ ->
+                        {0, Acc}
+                end,
+            if
+                Total =< Acc andalso Total > Min ->
+                    {Count + ChildCount, Total};
+                true ->
+                    {Count, Acc}
+            end
+        end,
+        {0, undefined},
+        digraph:out_edges(Digraph, From)
+    ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Util
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1427,6 +1680,8 @@ parse_args([[$- | Flag] | Args], Acc) ->
             parse_args(Args, Acc#{dry_run => true});
         "-generate" ->
             parse_flag(Flag, Args, fun(Arg) -> Acc#{generate_definition => Arg} end);
+        "-latencies" ->
+            parse_flag(Flag, Args, fun(Arg) -> Acc#{show_latencies => Arg} end);
         "-experiment" ->
             parse_flag(Flag, Args, fun(Arg) -> Acc#{experiment_definition => Arg} end);
         [$h] ->
@@ -1450,6 +1705,8 @@ required(Opts) ->
             {ok, Opts};
         #{experiment_definition := _} ->
             {ok, Opts};
+        #{show_latencies := _} ->
+            {ok, Opts};
         _ ->
-            {error, "Missing required --generate or --experiment flags"}
+            {error, "Missing required --latencies, --generate or --experiment flags"}
     end.
