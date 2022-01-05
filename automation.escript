@@ -64,7 +64,6 @@
     ]
 ).
 
-% These nodes should be configured manually
 -define(BIG_NODES,
     #{
         'veleta1' => [],
