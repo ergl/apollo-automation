@@ -159,9 +159,57 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                 lists:keyreplace(Key, 1, Acc, {Key, Value})
             end,
 
+        RunWith = maps:get(run_with, Experiment),
+
+        % Verify that run terms is well formed
+
+        VerifyOp =
+            fun(Op, Keys) when is_list(Keys) ->
+                lists:foreach(
+                    fun(Key) ->
+                        if
+                            is_map_key(Key, RunWith) ->
+                                ok;
+                            true ->
+                                io:fwrite(
+                                    standard_error,
+                                    "[~s] Operation ~p needed attribute ~p, but it's not present in spec~n",
+                                    [maps:get(results_folder, Experiment), Op, Key]
+                                ),
+                                throw(error)
+                        end
+                    end,
+                    Keys
+                )
+            end,
+
+        Ops = maps:get(operations, RunWith),
+        lists:foreach(
+            fun(Op) ->
+                case Op of
+                    read -> VerifyOp(Op, [readonly_ops]);
+                    read_random_pool -> VerifyOp(Op, [readonly_ops]);
+                    read_distinct -> VerifyOp(Op, [readonly_ops]);
+                    update -> VerifyOp(Op, [writeonly_ops]);
+                    update_distinct -> VerifyOp(Op, [writeonly_ops]);
+                    mixed -> VerifyOp(Op, [readonly_ops, writeonly_ops]);
+                    no_tx_read -> VerifyOp(Op, [readonly_ops]);
+                    no_tx_read_with_id -> VerifyOp(Op, [readonly_ops]);
+                    _ ->
+                        io:fwrite(
+                            standard_error,
+                            "[~s] Unknown operation specified: ~p~n",
+                            [maps:get(results_folder, Experiment), Op]
+                        ),
+                        throw(error)
+                end
+            end,
+            Ops
+        ),
+
         % Fill all template values from experiment definition
         ExperimentTerms =
-            maps:fold(ReplaceKeyFun, TermsWithConcurrent, maps:get(run_with, Experiment)),
+            maps:fold(ReplaceKeyFun, TermsWithConcurrent, RunWith),
 
         % Fill all cluster template values from definition
         RunOnTerms = maps:get(run_on, Experiment),
