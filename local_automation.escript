@@ -838,7 +838,7 @@ cleanup_clients(ClusterMap) ->
     io:format("~p~n", [Res]),
     ok.
 
-pull_results(ConfigFile, ClusterMap, Path) ->
+pull_results(ConfigFile, Path, ClusterMap) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
     PullClients = fun(Timeout) ->
         pmap(
@@ -846,7 +846,7 @@ pull_results(ConfigFile, ClusterMap, Path) ->
                 NodeStr = atom_to_list(Node),
                 HomePathForNode = home_path_for_node(NodeStr),
                 ResultPath = io_lib:format("~s/runner_results/current", [home_path_for_node(NodeStr)]),
-                TargetPath = filename:join([?RESULTS_DIR, Path, NodeStr]),
+                TargetPath = filename:join([Path, NodeStr]),
 
                 safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
 
@@ -894,7 +894,7 @@ pull_results(ConfigFile, ClusterMap, Path) ->
             fun(Node) ->
                 NodeStr = atom_to_list(Node),
                 HomePathForNode = home_path_for_node(NodeStr),
-                TargetPath = filename:join([?RESULTS_DIR, Path, NodeStr]),
+                TargetPath = filename:join([Path, NodeStr]),
 
                 safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
 
