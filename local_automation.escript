@@ -683,11 +683,47 @@ load_ext(Master, ClusterMap, LoadSpec) ->
 bench_ext(Master, RunTerms, ClusterMap) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
 
+    {Partitions, Clients} =
+        maps:fold(
+            fun
+                (_, #{servers := S, clients := C}, {0, 0}) ->
+                    {length(S), length(C)};
+                (_, #{servers := _}, Acc) ->
+                    Acc
+            end,
+            {0, 0},
+            ClusterMap
+        ),
+
+    % Two reads, temp.
+    ClientsPerGroup = Clients div (Partitions div 2),
+
     NodesWithReplicas = [
         {Replica, N} ||
             {Replica, #{clients := C}} <- maps:to_list(ClusterMap),
             N <- lists:usort(C)
     ],
+
+    % Split clients among partitions
+    {_, _, NodesWithReplicasAndRange} = lists:foldl(
+        fun({Replica, Node}, {Starting0, Nth0, Acc}) ->
+            {Starting, Nth} =
+                if
+                    Nth0 =:= (ClientsPerGroup - 1) ->
+                        {Starting0 + 2, 0};
+                    true ->
+                        {Starting0, Nth0 + 1}
+                end,
+
+            {
+                Starting,
+                Nth,
+                [{Replica, Node, Starting0, Starting0 + 1} | Acc]
+            }
+        end,
+        {0, 0, []},
+        NodesWithReplicas
+    ),
 
     ArgumentString =
         lists:foldl(
@@ -778,13 +814,41 @@ bench_ext(Master, RunTerms, ClusterMap) ->
 
     %% Wait at least the same time that the benchmark is supposed to run
     BenchTimeout = timer:minutes(RunsForMinutes) + ?TIMEOUT,
+    % pmap(
+    %     fun({Replica, Node}) ->
+    %         NodeStr = atom_to_list(Node),
+    %         ResultPath = io_lib:format("~s/runner_results/current", [home_path_for_node(NodeStr)]),
+    %         NodeArgList = io_lib:format(
+    %             "-replica ~s -master_ip ~s -master_port ~b -resultPath ~s ~s",
+    %             [atom_to_list(Replica), atom_to_list(Master), MasterPort, ResultPath, ArgumentString]
+    %         ),
+
+    %         Command = client_command(
+    %             NodeStr,
+    %             GitTag,
+    %             "run",
+    %             NodeArgList
+    %         ),
+
+    %         Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, NodeStr]),
+    %         safe_cmd(Cmd)
+    %     end,
+    %     NodesWithReplicas,
+    %     BenchTimeout
+    % ),
     pmap(
-        fun({Replica, Node}) ->
+        fun({Replica, Node, LowerRange, UpperRange}) ->
+            CustomArgString =
+                io_lib:format(
+                    "~s -lowerPartitionRange ~b -upperPartitionRange ~b",
+                    [ArgumentString, LowerRange, UpperRange]
+                ),
+
             NodeStr = atom_to_list(Node),
             ResultPath = io_lib:format("~s/runner_results/current", [home_path_for_node(NodeStr)]),
             NodeArgList = io_lib:format(
                 "-replica ~s -master_ip ~s -master_port ~b -resultPath ~s ~s",
-                [atom_to_list(Replica), atom_to_list(Master), MasterPort, ResultPath, ArgumentString]
+                [atom_to_list(Replica), atom_to_list(Master), MasterPort, ResultPath, CustomArgString]
             ),
 
             Command = client_command(
@@ -797,7 +861,7 @@ bench_ext(Master, RunTerms, ClusterMap) ->
             Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, NodeStr]),
             safe_cmd(Cmd)
         end,
-        NodesWithReplicas,
+        NodesWithReplicasAndRange,
         BenchTimeout
     ),
 
