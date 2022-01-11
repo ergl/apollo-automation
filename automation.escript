@@ -277,6 +277,18 @@ build_cluster_map([], _, _, Acc, _, _) ->
 build_cluster_map([ClusterName | Rest], NP, NClients, Acc, Available0, PreferenceClients0)
     when not is_map_key(ClusterName, Acc) ->
         {Servers, Available1} = lists:split(NP, Available0),
+        TotalAvailable = length(PreferenceClients0) + length(Available1),
+        if
+            NClients > TotalAvailable ->
+                io:fwrite(
+                    standard_error,
+                    "Not enough available machines for experiment: want ~b, have ~b~n",
+                    [NClients, TotalAvailable]
+                ),
+                throw(error);
+            true ->
+                ok
+        end,
         case length(PreferenceClients0) of
             N when N >= NClients ->
                 {Clients, PreferenceClients1} = lists:split(NClients, PreferenceClients0),
