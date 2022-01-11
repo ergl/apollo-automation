@@ -315,10 +315,12 @@ do_command(cleanup_clients, _Master, ClusterMap) ->
     ok = cleanup_clients(ClusterMap);
 
 do_command(cleanup, Master, ClusterMap) ->
-    ok = do_command(cleanup_latencies, Master, ClusterMap),
-    ok = do_command(cleanup_master, Master, ClusterMap),
-    ok = do_command(cleanup_servers, Master, ClusterMap),
-    ok = do_command(cleanup_clients, Master, ClusterMap);
+    prompt_gate("Are you sure you want to clean up?", default_no, fun() ->
+        ok = do_command(cleanup_latencies, Master, ClusterMap),
+        ok = do_command(cleanup_master, Master, ClusterMap),
+        ok = do_command(cleanup_servers, Master, ClusterMap),
+        ok = do_command(cleanup_clients, Master, ClusterMap)
+    end);
 
 do_command({pull, Directory}, _Master, ClusterMap) ->
     ok = pull_results(?CONFIG_FILE, Directory, ClusterMap).
