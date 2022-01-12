@@ -67,6 +67,7 @@
     , {load, false}
     , {bench, {true, "run.config"}}
     , {bench_no_load, {true, "run.config"}}
+    , {print_bench_command, {true, "run.config"}}
     , {brutal_client_kill, false}
 
     , {restart, false}
@@ -294,6 +295,10 @@ do_command({bench, RunConfigFileName}, Master, ClusterMap) ->
 do_command({bench_no_load, RunConfigFileName}, Master, ClusterMap) ->
     {ok, RunTerms} = file:consult(RunConfigFileName),
     ok = bench_ext(Master, RunTerms, ClusterMap);
+
+do_command({print_bench_command, RunConfigFileName}, Master, ClusterMap) ->
+    {ok, RunTerms} = file:consult(RunConfigFileName),
+    ok = print_bench_command(Master, RunTerms, ClusterMap);
 
 do_command(brutal_client_kill, _Master, ClusterMap) ->
     ok = brutal_client_kill(ClusterMap);
@@ -811,6 +816,80 @@ bench_ext(Master, RunTerms, ClusterMap) ->
         _ ->
             ok
     end.
+
+print_bench_command(Master, RunTerms, ClusterMap) ->
+    GitTag = ets:lookup_element(?CONF, ext_tag, 2),
+
+    NodesWithReplicas = [
+        {Replica, N} ||
+            {Replica, #{clients := C}} <- maps:to_list(ClusterMap),
+            N <- lists:usort(C)
+    ],
+
+    ArgumentString =
+        lists:foldl(
+            fun(Elt, Acc) ->
+                case Elt of
+                    {duration, Minutes} ->
+                        io_lib:format("~s -duration ~bm", [Acc, Minutes]);
+                    {report_interval, Seconds} ->
+                        io_lib:format("~s -reportInterval ~bs", [Acc, Seconds]);
+                    {concurrent, Threads} ->
+                        io_lib:format("~s -concurrent ~b", [Acc, Threads]);
+                    {key_range, Keys} ->
+                        io_lib:format("~s -keyRange ~b", [Acc, Keys]);
+                    {value_bytes, Bytes} ->
+                        io_lib:format("~s -valueBytes ~b", [Acc, Bytes]);
+                    {conn_pool_size, PoolSize} ->
+                        io_lib:format("~s -poolSize ~b", [Acc, PoolSize]);
+                    {readonly_ops, N} when is_integer(N) ->
+                        io_lib:format("~s -readKeys ~b", [Acc, N]);
+                    {writeonly_ops, N} when is_integer(N) ->
+                        io_lib:format("~s -writeKeys ~b", [Acc, N]);
+                    {retry_aborts, true} ->
+                        io_lib:format("~s -retryAbort", [Acc]);
+                    {key_distribution, uniform} ->
+                        io_lib:format("~s -distribution uniform", [Acc]);
+                    {key_distribution, pareto} ->
+                        io_lib:format("~s -distribution pareto", [Acc]);
+                    {operations, OpList} ->
+                        lists:foldl(
+                            fun(Op, InnerAcc) ->
+                                io_lib:format("~s -operation ~s", [InnerAcc, atom_to_list(Op)])
+                            end,
+                            Acc,
+                            OpList
+                        );
+                    _ ->
+                        Acc
+                end
+            end,
+            "",
+            RunTerms
+        ),
+
+    MasterPort = ets:lookup_element(?CONF, master_port, 2),
+    lists:foreach(
+        fun({Replica, Node}) ->
+            NodeStr = atom_to_list(Node),
+            ResultPath = io_lib:format("~s/runner_results/current", [home_path_for_node(NodeStr)]),
+            NodeArgList = io_lib:format(
+                "-replica ~s -master_ip ~s -master_port ~b -resultPath ~s ~s",
+                [atom_to_list(Replica), atom_to_list(Master), MasterPort, ResultPath, ArgumentString]
+            ),
+
+            Command = client_command(
+                NodeStr,
+                GitTag,
+                "run",
+                NodeArgList
+            ),
+
+            io:format("~s ~s~n", [Command, NodeStr])
+        end,
+        NodesWithReplicas
+    ),
+    ok.
 
 cleanup_master(Master) ->
     io:format("~p~n", [do_in_nodes_seq("rm -rf /home/borja.deregil/sources; mkdir -p /home/borja.deregil/sources", [Master])]),
