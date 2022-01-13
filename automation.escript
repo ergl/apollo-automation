@@ -233,14 +233,15 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
         ].
 
 materialize_cluster_definition(RunOnTerms, TemplateTerms) ->
-    SimpleReplacements = maps:without([leaders, clusters, partitions, per_partition], RunOnTerms),
+    SimpleReplacements = maps:without([leaders, clusters, partitions, per_partition, use_veleta], RunOnTerms),
 
     Replicas = maps:get(clusters, RunOnTerms),
     Clusters =
         build_cluster_map(
             Replicas,
             maps:get(partitions, RunOnTerms),
-            maps:get(per_partition, RunOnTerms)
+            maps:get(per_partition, RunOnTerms),
+            maps:get(use_veleta, RunOnTerms, true)
         ),
 
     LeadersOnTemplate = maps:get(leaders, RunOnTerms, undefined),
@@ -259,18 +260,25 @@ materialize_cluster_definition(RunOnTerms, TemplateTerms) ->
         SimpleReplacements#{clusters => Clusters, leaders => Leaders}
     ).
 
-build_cluster_map(Clusters, NPartitions, NClients) ->
+build_cluster_map(Clusters, NPartitions, NClients, UseVeleta) ->
+    PreferenceClients =
+        if
+            UseVeleta ->
+                lists:sort(maps:keys(?BIG_NODES));
+            true ->
+                []
+        end,
     RealClients =
         case NClients of
             auto ->
                 AvailableForClients =
-                    (length(?ALL_NODES) + maps:size(?BIG_NODES)) -
+                    (length(?ALL_NODES) + length(PreferenceClients)) -
                         (NPartitions * length(Clusters)),
                 AvailableForClients div length(Clusters);
             _ ->
                 trunc(NPartitions * NClients)
         end,
-    build_cluster_map(Clusters, NPartitions, RealClients, #{}, ?ALL_NODES, lists:sort(maps:keys(?BIG_NODES))).
+    build_cluster_map(Clusters, NPartitions, RealClients, #{}, ?ALL_NODES, PreferenceClients).
 
 build_cluster_map([], _, _, Acc, _, _) ->
     Acc;
