@@ -1272,10 +1272,10 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
     PullServerLogs = fun(Timeout) ->
         pmap(
             fun(Node) ->
-                % Prefix folder with '_' to be excluded later
-                NodeStr = io_lib:format("_~s", [atom_to_list(Node)]),
+                NodeStr = atom_to_list(Node),
                 HomePathForNode = home_path_for_node(NodeStr),
-                TargetPath = filename:join([?RESULTS_DIR, Path, NodeStr]),
+                % Prefix folder with '_' to be excluded later
+                TargetPath = filename:join([?RESULTS_DIR, Path, io_lib:format("_~s", [NodeStr])]),
 
                 safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
 
