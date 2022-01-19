@@ -191,6 +191,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     read_distinct -> VerifyOp(Op, [readonly_ops]);
                     read_distinct_release -> VerifyOp(Op, [readonly_ops]);
                     read_distinct_measure -> VerifyOp(Op, [readonly_ops]);
+                    read_distinct_no_commit -> VerifyOp(Op, [readonly_ops]);
                     read_track ->  VerifyOp(Op, [readonly_ops]);
                     update -> VerifyOp(Op, [writeonly_ops]);
                     update_distinct -> VerifyOp(Op, [writeonly_ops]);
@@ -1180,6 +1181,7 @@ pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath)
             (read_distinct) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (read_distinct_release) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (read_distinct_measure) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
+            (read_distinct_no_commit) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (read_random_pool) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (read_track) -> io_lib:format("read_track_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (update) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
