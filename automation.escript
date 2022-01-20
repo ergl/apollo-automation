@@ -187,6 +187,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
             fun(Op) ->
                 case Op of
                     read -> VerifyOp(Op, [readonly_ops]);
+                    read_release -> VerifyOp(Op, [readonly_ops]);
                     read_random_pool -> VerifyOp(Op, [readonly_ops]);
                     read_distinct -> VerifyOp(Op, [readonly_ops]);
                     read_distinct_release -> VerifyOp(Op, [readonly_ops]);
@@ -1178,6 +1179,7 @@ pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath)
     OpToString =
         fun
             (read) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
+            (read_release) -> io_lib:format("read_release_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (read_distinct) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (read_distinct_release) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (read_distinct_measure) -> io_lib:format("read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
