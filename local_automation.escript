@@ -722,6 +722,8 @@ bench_ext(Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -distribution uniform", [Acc]);
                     {key_distribution, pareto} ->
                         io_lib:format("~s -distribution pareto", [Acc]);
+                    {key_distribution, split_uniform} ->
+                        io_lib:format("~s -distribution split_uniform", [Acc]);
                     {operations, OpList} ->
                         lists:foldl(
                             fun(Op, InnerAcc) ->
@@ -852,6 +854,8 @@ print_bench_command(Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -distribution uniform", [Acc]);
                     {key_distribution, pareto} ->
                         io_lib:format("~s -distribution pareto", [Acc]);
+                    {key_distribution, split_uniform} ->
+                        io_lib:format("~s -distribution split_uniform", [Acc]);
                     {operations, OpList} ->
                         lists:foldl(
                             fun(Op, InnerAcc) ->
