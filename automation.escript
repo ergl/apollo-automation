@@ -512,6 +512,7 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
                             _ -> {archive, Results}
                         end,
                     ok = pull_results(
+                        ConfigTerms,
                         ConfigFile,
                         Results,
                         RunTerms,
@@ -1168,7 +1169,7 @@ cleanup_clients(ClusterMap) ->
     io:format("~p~n", [Res]),
     ok.
 
-pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath) ->
+pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath) ->
     {NPartitions, NClients} =
         maps:fold(
             fun
@@ -1216,11 +1217,12 @@ pull_results(ConfigFile, ResultsFolder, RunTerms, ClusterMap, ShouldArchivePath)
             proplists:get_value(operations, RunTerms, [])
         ),
     Path = io_lib:format(
-        "partitions_~b+cl_~b+cm_~b+~s+t_~b_~s",
+        "partitions_~b+cl_~b+cm_~b+localpool_~s+~s+t_~b_~s",
         [
             NPartitions,
             maps:size(ClusterMap),
             NClients,
+            proplists:get_value(local_dc_pool_size, ConfigTerms, "NA"),
             case OpString of "" -> "op_NA"; _ -> OpString end,
             proplists:get_value(concurrent, RunTerms, "NA"),
             calendar:system_time_to_rfc3339(erlang:system_time(millisecond), [{unit, millisecond}])
