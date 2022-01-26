@@ -1217,7 +1217,7 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
             proplists:get_value(operations, RunTerms, [])
         ),
     Path = io_lib:format(
-        "partitions_~b+cl_~b+cm_~b+localpool_~s+~s+t_~b_~s",
+        "partitions_~b+cl_~b+cm_~b+localpool_~b+~s+t_~b_~s",
         [
             NPartitions,
             maps:size(ClusterMap),
