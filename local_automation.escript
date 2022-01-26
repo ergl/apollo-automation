@@ -979,7 +979,8 @@ pull_results(ConfigFile, Path, ClusterMap) ->
             fun(Node) ->
                 NodeStr = atom_to_list(Node),
                 HomePathForNode = home_path_for_node(NodeStr),
-                TargetPath = filename:join([Path, NodeStr]),
+                % Prefix folder with '_' to be excluded later
+                TargetPath = filename:join([Path, io_lib:format("_~s", [NodeStr])]),
 
                 safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
 
