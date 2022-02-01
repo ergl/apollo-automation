@@ -996,6 +996,12 @@ pull_results(ConfigFile, Path, ClusterMap) ->
                     [?SSH_PRIV_KEY, NodeStr, HomePathForNode, NodeStr, TargetPath]
                 )),
 
+                %% Transfer pcap if it exists
+                safe_cmd(io_lib:format(
+                    "scp -C -i ~s borja.deregil@~s:~s/server.pcap ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
+                )),
+
                 %% Transfer screenlog file
                 safe_cmd(io_lib:format(
                     "scp -i ~s borja.deregil@~s:~s/screenlog.0 ~s",
