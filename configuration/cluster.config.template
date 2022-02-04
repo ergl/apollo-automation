@@ -6,7 +6,7 @@
 {clusters, '_'}.
 {latencies, #{}}.
 {inter_dc_pool_size, 12}.
-{local_dc_pool_size, 1}.
+{local_dc_pool_size, 12}.
 {ext_local_port, 7070}.
 {ext_dc_port, 8989}.
 {ping_interval_ms, 100}.
