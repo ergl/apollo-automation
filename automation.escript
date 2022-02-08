@@ -439,19 +439,30 @@ run_experiments(Retries, Opts, LastClusterTerms, [ Spec | Rest ]=AllSpecs) ->
             run_experiments(?RETRIES, Opts, cluster_config(Spec), Rest);
 
         {error, Reason} when Retries > 0 ->
+            SpecTitle = maps:get(results_folder, Spec),
             io:fwrite(
                 standard_error,
-                "Retrying spec error ~p (~b/~b) on spec: ~n~p~n", [Reason, Retries, ?RETRIES, Spec]
+                "Retrying spec ~s error (~b/~b)~nReason: ~p~nFull spec: ~p~n",
+                [SpecTitle, Retries, ?RETRIES, Reason, Spec]
             ),
             %% Retry again, with last cluster as undefined so that we can start from a clean slate
             run_experiments(Retries - 1, Opts, undefined, AllSpecs);
 
         {error, Reason} ->
-            io:fwrite(standard_error, "Spec error on ~p~nError:~p~n", [Spec, Reason]),
+            SpecTitle = maps:get(results_folder, Spec),
+            io:fwrite(
+                standard_error,
+                "Spec error on ~s~nReason:~p~nFull spec: ~p~n",
+                [SpecTitle, Reason, Spec]
+            ),
             error;
 
         {fatal_error, Reason} ->
-            io:fwrite(standard_error, "Fatal spec error on ~p~nError: ~p~n", [Spec, Reason]),
+            SpecTitle = maps:get(results_folder, Spec),
+            io:fwrite(
+                standard_error,
+                "Fatal spec error on ~s~nReason: ~p~nFull spec: ~p~n",
+                [SpecTitle, Reason, Spec]),
             error
     end.
 
