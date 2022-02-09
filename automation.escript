@@ -508,6 +508,12 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
                     ok = start_master(Master),
                     ok = start_server(ConfigFile, ClusterMap),
 
+                    % Wait a bit for all servers to connect to each other before
+                    % we start the benchmark. Otherwise, we might get ECONNREFUSED
+                    % since servers don't start their client servers until they're
+                    % ready
+                    ok = timer:sleep(1000),
+
                     %% Actual experiment: load then bench
                     ok = load_ext(Master, ClusterMap, LoadSpec),
                     ok = bench_ext(Master, RunTerms, ClusterMap),
