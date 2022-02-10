@@ -188,10 +188,18 @@ start_ext(Replica, Config) ->
                 ArgString2
         end,
 
+    ArgString4 =
+        case get_config_key(commit_gc_interval_ms, Config) of
+            {ok, GCInterval} ->
+                ArgString3 ++ io_lib:format(" -committedGCInterval ~s", [to_go_duration(GCInterval)]);
+            error ->
+                ArgString3
+            end,
+
     {ok, Tag} = get_config_key(ext_tag, Config),
     Cmd = io_lib:format(
         "screen -dmSL ~s ./sources/~s/~s ~s",
-        [?DEFAULT_BIN_NAME, Tag, ?DEFAULT_BIN_NAME, ArgString3]
+        [?DEFAULT_BIN_NAME, Tag, ?DEFAULT_BIN_NAME, ArgString4]
     ),
 
     os_cmd(Cmd),
@@ -410,3 +418,5 @@ check_command(Opts = #{command := Command}) ->
     end.
 
 nonl(S) -> string:trim(S, trailing, "$\n").
+
+to_go_duration(TimeMs) -> io_lib:format("~bms", [TimeMs]).

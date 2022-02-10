@@ -11,3 +11,4 @@
 {ext_dc_port, 8989}.
 {ping_interval_ms, 100}.
 {log_level, 2}.
+{commit_gc_interval_ms, 5000}.
