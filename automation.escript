@@ -55,7 +55,7 @@
         'apollo-2-4.imdea',
         'apollo-2-5.imdea',
         'apollo-2-6.imdea',
-        'apollo-2-7.imdea',
+        % 'apollo-2-7.imdea',
         'apollo-2-8.imdea',
         'apollo-2-9.imdea',
         'apollo-2-10.imdea',
