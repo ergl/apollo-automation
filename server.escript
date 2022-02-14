@@ -13,6 +13,7 @@
 -define(DEFAULT_LISTEN_PORT, 7070).
 -define(DEFAULT_INTER_DC_PORT, 8989).
 -define(DEFAULT_MASTER_PORT, 7087).
+-define(DEFAULT_WORKER_THREADS, 12).
 -define(COMMANDS, [
     {download, {true, "Github Token"}},
     {start, {true, "Replica Name"}},
@@ -148,8 +149,10 @@ start_ext(Replica, Config) ->
     LOG_LEVEL = get_config_key(log_level, Config, ?DEFAULT_LOG_LEVEL),
     LOG_FILE = get_log_file(LogPath),
 
+    WORKER_THREADS = get_config_key(worker_threads, Config, ?DEFAULT_WORKER_THREADS),
+
     ArgString0 = io_lib:format(
-        "-replica ~s -ip ~s -port ~b -replPort ~b -mIp ~s -mPort ~b -pingMs ~b -f ~b -log ~s -log_level ~b",
+        "-replica ~s -ip ~s -port ~b -replPort ~b -mIp ~s -mPort ~b -pingMs ~b -f ~b -log ~s -log_level ~b -shards ~b",
         [
             Replica,
             IP,
@@ -160,7 +163,8 @@ start_ext(Replica, Config) ->
             PING_INTERVAL_MS,
             FAULT_TOLERANCE_FACTOR,
             LOG_FILE,
-            LOG_LEVEL
+            LOG_LEVEL,
+            WORKER_THREADS
         ]
     ),
 
