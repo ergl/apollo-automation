@@ -1,5 +1,5 @@
 {duration,5}.
-{report_interval,1}.
+{report_interval,5}.
 {concurrent,'_'}.
 
 {key_distribution, uniform}.
