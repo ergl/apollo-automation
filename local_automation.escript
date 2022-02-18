@@ -49,12 +49,11 @@
     , {check, false}
     , {push_scripts, false}
     , {sync, false}
-    , {latencies, false}
 
     , {master, false}
     , {servers, false}
     , {clients, false}
-    % Downloads all and starts master, server, puts latencies
+    % Downloads all and starts master, server
     , {prologue, false}
 
     , {start_master, false}
@@ -72,7 +71,6 @@
 
     , {restart, false}
     , {cleanup, false}
-    , {cleanup_latencies, false}
     , {cleanup_master, false}
     , {cleanup_servers, false}
     , {cleanup_clients, false}
@@ -119,12 +117,12 @@ main(Args) ->
                     ets:delete(?CONF),
                     io:fwrite(standard_error, "Preprocess error: ~p~n", [TraceBack]);
 
-                {ClusterMap, Master} ->
+                {ClusterMap, Latencies, Master} ->
                     case maps:get(command_arg, Opts, false) of
                         false ->
-                            ok = do_command(Command, Master, ClusterMap);
+                            ok = do_command(Command, Master, ClusterMap, Latencies);
                         CommandArg ->
-                            ok = do_command({Command, CommandArg}, Master, ClusterMap)
+                            ok = do_command({Command, CommandArg}, Master, ClusterMap, Latencies)
                     end, 
                     true = ets:delete(?CONF),
                     ok
@@ -221,113 +219,107 @@ preprocess_args(Opts, ConfigTerms) ->
     true = ets:insert(?CONF, {dry_run, maps:get(dry_run, Opts, false)}),
     true = ets:insert(?CONF, {silent, maps:get(verbose, Opts, false)}),
 
-    {ClusterMap, Master}.
+    {latencies, Latencies} = lists:keyfind(latencies, 1, ConfigTerms),
+
+    {ClusterMap, Latencies, Master}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Commands
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-do_command(reboot, Master, ClusterMap) ->
+do_command(reboot, Master, ClusterMap, _) ->
     prompt_gate("Are you sure you want to reboot?", default_no, fun() ->
         AllNodes = all_nodes(ClusterMap),
         io:format("~p~n", [do_in_nodes_par("sudo reboot", [Master | AllNodes], ?TIMEOUT)])
     end);
 
-do_command(check, Master, ClusterMap) ->
+do_command(check, Master, ClusterMap, _) ->
     check_nodes(Master, ClusterMap);
 
-do_command(push_scripts, Master, ClusterMap) ->
+do_command(push_scripts, Master, ClusterMap, _) ->
     push_scripts(?CONFIG_FILE, Master, ClusterMap);
 
-do_command(sync, Master, ClusterMap) ->
+do_command(sync, Master, ClusterMap, _) ->
     sync_nodes(Master, ClusterMap);
 
-do_command(latencies, _Master, ClusterMap) ->
-    ok = setup_latencies(?CONFIG_FILE, ClusterMap);
-
-do_command(master, Master, _ClusterMap) ->
+do_command(master, Master, _ClusterMap, LatencyMap) ->
     ok = download_master(Master),
-    ok = start_master(Master);
+    ok = start_master(Master, LatencyMap);
 
-do_command(servers, _Master, ClusterMap) ->
+do_command(servers, _Master, ClusterMap, _) ->
     ok = download_server(?CONFIG_FILE, ClusterMap),
     ok = start_server(?CONFIG_FILE, ClusterMap);
 
-do_command(clients, _Master, ClusterMap) ->
+do_command(clients, _Master, ClusterMap, _) ->
     ok = download_runner(ClusterMap);
 
-do_command(prologue, Master, ClusterMap) ->
-    ok = do_command(check, Master, ClusterMap),
-    ok = do_command(push_scripts, Master, ClusterMap),
-    ok = do_command(sync, Master, ClusterMap),
-    ok = do_command(master, Master, ClusterMap),
-    ok = do_command(latencies, Master, ClusterMap),
-    ok = do_command(servers, Master, ClusterMap),
-    ok = do_command(clients, Master, ClusterMap);
+do_command(prologue, Master, ClusterMap, LatencyMap) ->
+    ok = do_command(check, Master, ClusterMap, LatencyMap),
+    ok = do_command(push_scripts, Master, ClusterMap, LatencyMap),
+    ok = do_command(sync, Master, ClusterMap, LatencyMap),
+    ok = do_command(master, Master, ClusterMap, LatencyMap),
+    ok = do_command(servers, Master, ClusterMap, LatencyMap),
+    ok = do_command(clients, Master, ClusterMap, LatencyMap);
 
-do_command(start_master, Master, _ClusterMap) ->
-    ok = start_master(Master);
+do_command(start_master, Master, _, LatencyMap) ->
+    ok = start_master(Master, LatencyMap);
 
-do_command(stop_master, Master, _ClusterMap) ->
+do_command(stop_master, Master, _, _) ->
     ok = stop_master(Master);
 
-do_command(start_servers, _Master, ClusterMap) ->
+do_command(start_servers, _Master, ClusterMap, _) ->
     ok = start_server(?CONFIG_FILE, ClusterMap);
 
-do_command(stop_servers, _Master, ClusterMap) ->
+do_command(stop_servers, _Master, ClusterMap, _) ->
     ok = stop_server(?CONFIG_FILE, ClusterMap);
 
-do_command(start, Master, ClusterMap) ->
-    ok = do_command(start_master, Master, ClusterMap),
-    ok = do_command(start_servers, Master, ClusterMap);
+do_command(start, Master, ClusterMap, LatencyMap) ->
+    ok = do_command(start_master, Master, ClusterMap, LatencyMap),
+    ok = do_command(start_servers, Master, ClusterMap, LatencyMap);
 
-do_command(stop, Master, ClusterMap) ->
-    ok = do_command(stop_master, Master, ClusterMap),
-    ok = do_command(stop_servers, Master, ClusterMap);
+do_command(stop, Master, ClusterMap, LatencyMap) ->
+    ok = do_command(stop_master, Master, ClusterMap, LatencyMap),
+    ok = do_command(stop_servers, Master, ClusterMap, LatencyMap);
 
-do_command(load, Master, ClusterMap) ->
+do_command(load, Master, ClusterMap, _) ->
     ok = load_ext(Master, ClusterMap, ?LOAD_SPEC);
 
-do_command({bench, RunConfigFileName}, Master, ClusterMap) ->
-    ok = do_command(load, Master, ClusterMap),
-    ok = do_command({bench_no_load, RunConfigFileName}, Master, ClusterMap);
+do_command({bench, RunConfigFileName}, Master, ClusterMap, LatencyMap) ->
+    ok = do_command(load, Master, ClusterMap, LatencyMap),
+    ok = do_command({bench_no_load, RunConfigFileName}, Master, ClusterMap, LatencyMap);
 
-do_command({bench_no_load, RunConfigFileName}, Master, ClusterMap) ->
+do_command({bench_no_load, RunConfigFileName}, Master, ClusterMap, _) ->
     {ok, RunTerms} = file:consult(RunConfigFileName),
     ok = bench_ext(Master, RunTerms, ClusterMap);
 
-do_command({print_bench_command, RunConfigFileName}, Master, ClusterMap) ->
+do_command({print_bench_command, RunConfigFileName}, Master, ClusterMap, _) ->
     {ok, RunTerms} = file:consult(RunConfigFileName),
     ok = print_bench_command(Master, RunTerms, ClusterMap);
 
-do_command(brutal_client_kill, _Master, ClusterMap) ->
+do_command(brutal_client_kill, _Master, ClusterMap, _) ->
     ok = brutal_client_kill(ClusterMap);
 
-do_command(restart, Master, ClusterMap) ->
-    ok = do_command(stop, Master, ClusterMap),
-    ok = do_command(start, Master, ClusterMap);
+do_command(restart, Master, ClusterMap, LatencyMap) ->
+    ok = do_command(stop, Master, ClusterMap, LatencyMap),
+    ok = do_command(start, Master, ClusterMap, LatencyMap);
 
-do_command(cleanup_latencies, _Master, ClusterMap) ->
-    ok = cleanup_latencies(?CONFIG_FILE, ClusterMap);
-
-do_command(cleanup_master, Master, _ClusterMap) ->
+do_command(cleanup_master, Master, _ClusterMap, _) ->
     ok = cleanup_master(Master);
 
-do_command(cleanup_servers, _Master, ClusterMap) ->
+do_command(cleanup_servers, _Master, ClusterMap, _) ->
     ok = cleanup_servers(ClusterMap);
 
-do_command(cleanup_clients, _Master, ClusterMap) ->
+do_command(cleanup_clients, _Master, ClusterMap, _) ->
     ok = cleanup_clients(ClusterMap);
 
-do_command(cleanup, Master, ClusterMap) ->
+do_command(cleanup, Master, ClusterMap, LatencyMap) ->
     prompt_gate("Are you sure you want to clean up?", default_no, fun() ->
-        ok = do_command(cleanup_latencies, Master, ClusterMap),
-        ok = do_command(cleanup_master, Master, ClusterMap),
-        ok = do_command(cleanup_servers, Master, ClusterMap),
-        ok = do_command(cleanup_clients, Master, ClusterMap)
+        ok = do_command(cleanup_master, Master, ClusterMap, LatencyMap),
+        ok = do_command(cleanup_servers, Master, ClusterMap, LatencyMap),
+        ok = do_command(cleanup_clients, Master, ClusterMap, LatencyMap)
     end);
 
-do_command({pull, Directory}, _Master, ClusterMap) ->
+do_command({pull, Directory}, _Master, ClusterMap, _) ->
     ok = pull_results(?CONFIG_FILE, Directory, ClusterMap).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -462,50 +454,6 @@ sync_nodes(Master, ClusterMap) ->
             end
     end.
 
--spec setup_latencies(_, _) -> ok | error.
-setup_latencies(ConfigFile, ClusterMap) ->
-    maps:fold(
-        fun
-            (_, _, error) ->
-                error;
-
-            (ClusterName, #{servers := ClusterServers}, ok) ->
-                case
-                    do_in_nodes_par(
-                            server_command(ConfigFile, "tc", atom_to_list(ClusterName)),
-                            ClusterServers,
-                            ?TIMEOUT
-                        )
-                of
-                    {error, _} ->
-                        error;
-                    Print ->
-                        io:format("~p~n", [Print]),
-                        ok
-                end
-        end,
-        ok,
-        ClusterMap
-    ).
-
-cleanup_latencies(ConfigFile, ClusterMap) ->
-    maps:fold(
-        fun(ClusterName, #{servers := ClusterServers}, _Acc) ->
-            io:format(
-                "~p~n",
-                [
-                    do_in_nodes_par(
-                        server_command(ConfigFile, "tclean", atom_to_list(ClusterName)),
-                        ClusterServers,
-                        infinity
-                    )
-                ]
-            )
-        end,
-        ok,
-        ClusterMap
-    ).
-
 download_master(Master) ->
     AuthToken = ets:lookup_element(?CONF, token, 2),
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
@@ -517,7 +465,7 @@ download_master(Master) ->
             ok
     end.
 
-start_master(Master) ->
+start_master(Master, LatencyMap) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
     NumReplicas = ets:lookup_element(?CONF, n_replicas, 2),
     NumPartitions = ets:lookup_element(?CONF, n_partitions, 2),
@@ -535,6 +483,24 @@ start_master(Master) ->
             ets:lookup_element(?CONF, leaders, 2)
         ),
 
+    MasterSpec =
+        maps:fold(
+            fun(FromReplica, ToReplicas, Acc) ->
+                lists:foldl(
+                    fun({ToReplica, Latency}, InnerAcc) ->
+                        io_lib:format(
+                            "~s -replicaLatency ~s:~s:~b",
+                            [InnerAcc, FromReplica, ToReplica, Latency]
+                        )
+                    end,
+                    Acc,
+                    ToReplicas
+                )
+            end,
+            LeaderSpec,
+            LatencyMap
+        ),
+
     case
         do_in_nodes_par(
                 master_command(
@@ -542,7 +508,7 @@ start_master(Master) ->
                     "run",
                     integer_to_list(NumReplicas),
                     integer_to_list(NumPartitions),
-                    LeaderSpec
+                    MasterSpec
                 ),
                 [Master],
                 ?TIMEOUT

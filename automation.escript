@@ -497,15 +497,12 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
 
                             ok = download_master(Master),
                             ok = download_server(ConfigFile, ClusterMap),
-                            ok = download_runner(ClusterMap),
-
-                            %% Set up any needed latencies
-                            ok = setup_latencies(ConfigFile, ClusterMap)
+                            ok = download_runner(ClusterMap)
                     end,
 
                     %% Start things, re-sync NTP
                     ok = sync_nodes(Master, ClusterMap),
-                    ok = start_master(Master),
+                    ok = start_master(Master, ConfigTerms),
                     ok = start_server(ConfigFile, ClusterMap),
 
                     % Wait a bit for all servers to connect to each other before
@@ -547,7 +544,6 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
                             ok;
                         false ->
                             %% Clean up after the experiment
-                            ok = cleanup_latencies(ConfigFile, ClusterMap),
                             ok = cleanup_master(Master),
                             ok = cleanup_servers(ClusterMap),
                             ok = cleanup_clients(ClusterMap)
@@ -558,7 +554,6 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
                     error:Exception:Stack ->
                         %% An exception happened, clean up everything just in case
                         brutal_client_kill(ClusterMap),
-                        cleanup_latencies(ConfigFile, ClusterMap),
                         cleanup_master(Master),
                         cleanup_servers(ClusterMap),
                         cleanup_clients(ClusterMap),
@@ -567,7 +562,6 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
                     throw:Term:Stack ->
                         %% An exception happened, clean up everything just in case
                         brutal_client_kill(ClusterMap),
-                        cleanup_latencies(ConfigFile, ClusterMap),
                         cleanup_master(Master),
                         cleanup_servers(ClusterMap),
                         cleanup_clients(ClusterMap),
@@ -812,10 +806,11 @@ download_master(Master) ->
             ok
     end.
 
-start_master(Master) ->
+start_master(Master, ConfigTerms) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
     NumReplicas = ets:lookup_element(?CONF, n_replicas, 2),
     NumPartitions = ets:lookup_element(?CONF, n_partitions, 2),
+    {_, Latencies} = lists:keyfind(latencies, 1, ConfigTerms),
 
     % Build the arguments for master
     LeaderSpec =
@@ -830,6 +825,24 @@ start_master(Master) ->
             ets:lookup_element(?CONF, leaders, 2)
         ),
 
+    MasterSpec =
+        maps:fold(
+            fun(FromReplica, ToReplicas, Acc) ->
+                lists:foldl(
+                    fun({ToReplica, Latency}, InnerAcc) ->
+                        io_lib:format(
+                            "~s -replicaLatency ~s:~s:~b",
+                            [InnerAcc, FromReplica, ToReplica, Latency]
+                        )
+                    end,
+                    Acc,
+                    ToReplicas
+                )
+            end,
+            LeaderSpec,
+            Latencies
+        ),
+
     case
         do_in_nodes_par(
                 master_command(
@@ -837,7 +850,7 @@ start_master(Master) ->
                     "run",
                     integer_to_list(NumReplicas),
                     integer_to_list(NumPartitions),
-                    LeaderSpec
+                    MasterSpec
                 ),
                 [Master],
                 ?TIMEOUT
@@ -1113,50 +1126,6 @@ bench_ext(Master, RunTerms, ClusterMap) ->
         _ ->
             ok
     end.
-
--spec setup_latencies(_, _) -> ok | error.
-setup_latencies(ConfigFile, ClusterMap) ->
-    maps:fold(
-        fun
-            (_, _, error) ->
-                error;
-
-            (ClusterName, #{servers := ClusterServers}, ok) ->
-                case
-                    do_in_nodes_par(
-                            server_command(ConfigFile, "tc", atom_to_list(ClusterName)),
-                            ClusterServers,
-                            ?TIMEOUT
-                        )
-                of
-                    {error, _} ->
-                        error;
-                    Print ->
-                        io:format("~p~n", [Print]),
-                        ok
-                end
-        end,
-        ok,
-        ClusterMap
-    ).
-
-cleanup_latencies(ConfigFile, ClusterMap) ->
-    maps:fold(
-        fun(ClusterName, #{servers := ClusterServers}, _Acc) ->
-            io:format(
-                "~p~n",
-                [
-                    do_in_nodes_par(
-                        server_command(ConfigFile, "tclean", atom_to_list(ClusterName)),
-                        ClusterServers,
-                        infinity
-                    )
-                ]
-            )
-        end,
-        ok,
-        ClusterMap
-    ).
 
 cleanup_master(Master) ->
     io:format("~p~n", [do_in_nodes_seq("rm -rf /home/borja.deregil/sources; mkdir -p /home/borja.deregil/sources", [Master])]),

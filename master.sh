@@ -5,7 +5,7 @@ set -eo pipefail
 BIN_NAME=master_linux_amd64
 
 usage() {
-    echo "master.sh [-h] [-T tag] download <token> | run <replicas> <partitions> [leader spec ...] | stop"
+    echo "master.sh [-h] [-T tag] download <token> | run <replicas> <partitions> [arguments ...] | stop"
 }
 
 do_download() {
