@@ -19,9 +19,7 @@
     {start, {true, "Replica Name"}},
     {profile, false},
     {stop, false},
-    {restart, {true, "Replica Name"}},
-    {tc, {true, "Replica Name"}},
-    {tclean, {true, "Replica Name"}}
+    {restart, {true, "Replica Name"}}
 ]).
 
 usage() ->
@@ -60,11 +58,6 @@ main(Args) ->
 
             {ok, Config} = file:consult(ConfigFile),
             case Parsed of
-                %% First two require an extra argument
-                #{command := tc, command_arg := Arg} ->
-                    execute_command({tc, Arg, ConfigFile}, Config);
-                #{command := tclean, command_arg := Arg} ->
-                    execute_command({tclean, Arg, ConfigFile}, Config);
                 #{command := Command, command_arg := Arg} ->
                     execute_command({Command, Arg}, Config);
                 #{command := Command} ->
@@ -101,22 +94,6 @@ execute_command(stop, Config) ->
 execute_command({restart, Replica}, Config) ->
     ok = stop_ext(Config),
     ok = start_ext(Replica, Config),
-    ok;
-
-execute_command({tc, ClusterName, ConfigFile}, _) ->
-    Cmd = io_lib:format(
-        "escript -c -n build_tc_rules.escript -c ~s -f ~s -r run",
-        [ClusterName, ConfigFile]
-    ),
-    os_cmd(Cmd),
-    ok;
-
-execute_command({tclean, ClusterName, ConfigFile}, _) ->
-    Cmd = io_lib:format(
-        "escript -c -n build_tc_rules.escript -c ~s -f ~s -r cleanup",
-        [ClusterName, ConfigFile]
-    ),
-    os_cmd(Cmd),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

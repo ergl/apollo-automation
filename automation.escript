@@ -763,7 +763,6 @@ push_scripts(ConfigFile, Master, ClusterMap) ->
                 transfer_script(Node, "master.sh"),
                 transfer_script(Node, "server.escript"),
                 transfer_script(Node, "bench.sh"),
-                transfer_script(Node, "build_tc_rules.escript"),
                 transfer_script(Node, "my_ip"),
                 transfer_script(Node, "fetch_gh_release.sh"),
                 transfer_script(Node, "measure_cpu.sh"),
