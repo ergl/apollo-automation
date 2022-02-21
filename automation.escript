@@ -812,7 +812,7 @@ start_master(Master, ConfigTerms) ->
     {_, Latencies} = lists:keyfind(latencies, 1, ConfigTerms),
 
     % Build the arguments for master
-    LeaderSpec =
+    ArgString0 =
         maps:fold(
             fun(Partition, Replica, Acc) ->
                 io_lib:format(
@@ -824,7 +824,17 @@ start_master(Master, ConfigTerms) ->
             ets:lookup_element(?CONF, leaders, 2)
         ),
 
-    MasterSpec =
+    % FIXME(borja): Add a configuration key for leader order
+    ArgString1 =
+        maps:fold(
+            fun(Replica, _, Acc) ->
+                io_lib:format("~s -leaderChoice ~s", [Acc, Replica])
+            end,
+            ArgString0,
+            Latencies
+        ),
+
+    ArgString2 =
         maps:fold(
             fun(FromReplica, ToReplicas, Acc) ->
                 lists:foldl(
@@ -838,7 +848,7 @@ start_master(Master, ConfigTerms) ->
                     ToReplicas
                 )
             end,
-            LeaderSpec,
+            ArgString1,
             Latencies
         ),
 
@@ -849,7 +859,7 @@ start_master(Master, ConfigTerms) ->
                     "run",
                     integer_to_list(NumReplicas),
                     integer_to_list(NumPartitions),
-                    MasterSpec
+                    ArgString2
                 ),
                 [Master],
                 ?TIMEOUT
