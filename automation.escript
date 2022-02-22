@@ -1041,6 +1041,8 @@ bench_ext(Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -distribution pareto", [Acc]);
                     {key_distribution, split_uniform} ->
                         io_lib:format("~s -distribution split_uniform", [Acc]);
+                    {key_distribution, {biased_key, Key, Bias}} when is_integer(Key) andalso is_integer(Bias) ->
+                        io_lib:format("~s -distribution biased_key -distrArgs \"-hotKey ~b -bias ~b\"", [Acc, Key, Bias]);
                     {operations, OpList} ->
                         lists:foldl(
                             fun(Op, InnerAcc) ->
