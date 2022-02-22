@@ -811,6 +811,7 @@ start_master(Master, ConfigTerms) ->
     NumReplicas = ets:lookup_element(?CONF, n_replicas, 2),
     NumPartitions = ets:lookup_element(?CONF, n_partitions, 2),
     {_, Latencies} = lists:keyfind(latencies, 1, ConfigTerms),
+    {_, Clusters} = lists:keyfind(clusters, 1, ConfigTerms),
 
     % Build the arguments for master
     ArgString0 =
@@ -832,7 +833,7 @@ start_master(Master, ConfigTerms) ->
                 io_lib:format("~s -leaderChoice ~s", [Acc, Replica])
             end,
             ArgString0,
-            Latencies
+            Clusters
         ),
 
     ArgString2 =
