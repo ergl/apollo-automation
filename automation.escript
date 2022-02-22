@@ -196,6 +196,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     read_track ->  VerifyOp(Op, [readonly_ops]);
                     update -> VerifyOp(Op, [writeonly_ops]);
                     update_distinct -> VerifyOp(Op, [writeonly_ops]);
+                    update_distinct_measure -> VerifyOp(Op, [writeonly_ops]);
                     update_track -> VerifyOp(Op, [writeonly_ops]);
                     mixed -> VerifyOp(Op, [readonly_ops, writeonly_ops]);
                     no_tx_read -> VerifyOp(Op, [readonly_ops]);
@@ -1188,6 +1189,7 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
             (read_track) -> io_lib:format("read_track_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (update) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (update_distinct) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
+            (update_distinct_measure) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (update_track) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (mixed) ->
                 R = proplists:get_value(readonly_ops, RunTerms),
