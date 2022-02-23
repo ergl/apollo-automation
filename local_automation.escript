@@ -149,6 +149,9 @@ preprocess_args(Opts, ConfigTerms) ->
     {leaders, Leaders} = lists:keyfind(leaders, 1, ConfigTerms),
     true = ets:insert(?CONF, {leaders, Leaders}),
 
+    {leader_preference, PrefList} = lists:keyfind(leader_preference, 1, ConfigTerms),
+    true = ets:insert(?CONF, {leader_preference, PrefList}),
+
     case lists:keyfind(cpu_profile, 1, ConfigTerms) of
         false ->
             ok;
@@ -468,6 +471,7 @@ start_master(Master, LatencyMap) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
     NumReplicas = ets:lookup_element(?CONF, n_replicas, 2),
     NumPartitions = ets:lookup_element(?CONF, n_partitions, 2),
+    LeaderPreferences = ets:lookup_element(?CONF, leader_preference, 2),
 
     % Build the arguments for master
     ArgString0 =
@@ -484,12 +488,12 @@ start_master(Master, LatencyMap) ->
 
     % FIXME(borja): Add a configuration key for leader order
     ArgString1 =
-        maps:fold(
-            fun(Replica, _, Acc) ->
+        lists:foldl(
+            fun(Replica, Acc) ->
                 io_lib:format("~s -leaderChoice ~s", [Acc, Replica])
             end,
             ArgString0,
-            LatencyMap
+            LeaderPreferences
         ),
 
     ArgString2 =

@@ -228,6 +228,8 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     materialize_cluster_definition(RunOnTerms, ClusterTerms)
             end,
 
+        ok = verify_leader_preferences(Experiment, maps:from_list(ConfigTerms)),
+
         [
             #{
                 config_terms => ConfigTerms,
@@ -237,7 +239,62 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
             }
         ].
 
-materialize_cluster_definition(RunOnTerms, TemplateTerms) ->
+verify_leader_preferences(Exp, #{leader_preference := Pref} = ConfigTerms) when is_atom(Pref) ->
+    verify_leader_preferences(Exp, ConfigTerms#{leader_preference => [Pref]});
+
+verify_leader_preferences(Experiment, #{leader_preference := PrefList} = ConfigTerms) when is_list(PrefList) ->
+    #{clusters := ClusterMap} = ConfigTerms,
+    if
+        map_size(ClusterMap) =:= length(PrefList) ->
+            %% Verify that all are known terms
+            Check =
+                lists:foldl(
+                    fun
+                        (_, {not_found, R}) -> {not_found, R};
+                        (Replica, ok) when is_map_key(Replica, ClusterMap) -> ok;
+                        (Replica, ok) -> {not_found, Replica}
+                    end,
+                    ok,
+                    PrefList
+                ),
+            case Check of
+                {not_found, R} ->
+                    io:fwrite(
+                        standard_error,
+                        "[~s] Leader preference contains unrecognized replica: ~p~n",
+                        [maps:get(results_folder, Experiment), R]
+                    ),
+                    throw(error);
+                ok ->
+                    ok
+            end;
+
+        true ->
+            io:fwrite(
+                standard_error,
+                "[~s] Leader preference list does not match number of clusters: ~p~n",
+                [maps:get(results_folder, Experiment), PrefList]
+            ),
+            throw(error)
+    end;
+
+verify_leader_preferences(Experiment, _) ->
+    io:fwrite(
+        standard_error,
+        "[~s] Leader preference list is not present or badly formatted~n",
+        [maps:get(results_folder, Experiment)]
+    ),
+    throw(error).
+
+materialize_cluster_definition(RunOnTerms0, TemplateTerms) ->
+    RunOnTerms =
+        if
+            is_map_key(leader_preference, RunOnTerms0) ->
+                RunOnTerms0;
+            true ->
+                RunOnTerms0#{leader_preference => maps:get(clusters, RunOnTerms0)}
+        end,
+
     SimpleReplacements = maps:without([leaders, clusters, partitions, per_partition, use_veleta], RunOnTerms),
 
     Replicas = maps:get(clusters, RunOnTerms),
@@ -811,7 +868,7 @@ start_master(Master, ConfigTerms) ->
     NumReplicas = ets:lookup_element(?CONF, n_replicas, 2),
     NumPartitions = ets:lookup_element(?CONF, n_partitions, 2),
     {_, Latencies} = lists:keyfind(latencies, 1, ConfigTerms),
-    {_, Clusters} = lists:keyfind(clusters, 1, ConfigTerms),
+    {_, Preferences} = lists:keyfind(leader_preference, 1, ConfigTerms),
 
     % Build the arguments for master
     ArgString0 =
@@ -826,14 +883,13 @@ start_master(Master, ConfigTerms) ->
             ets:lookup_element(?CONF, leaders, 2)
         ),
 
-    % FIXME(borja): Add a configuration key for leader order
     ArgString1 =
-        maps:fold(
-            fun(Replica, _, Acc) ->
+        lists:foldl(
+            fun(Replica, Acc) ->
                 io_lib:format("~s -leaderChoice ~s", [Acc, Replica])
             end,
             ArgString0,
-            Clusters
+            Preferences
         ),
 
     ArgString2 =
