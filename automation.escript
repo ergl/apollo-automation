@@ -533,7 +533,7 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
     } = Spec,
 
     _ = ets:new(?CONF, [set, named_table]),
-    case catch preprocess_args(Opts, ConfigTerms) of
+    case catch preprocess_args(Opts, ConfigTerms, RunTerms) of
         {'EXIT', TraceBack} ->
             ets:delete(?CONF),
             {fatal_error, TraceBack};
@@ -633,7 +633,7 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
 %% Set up experiment
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-preprocess_args(Opts, ConfigTerms) ->
+preprocess_args(Opts, ConfigTerms, RunTerms) ->
     {ok, TokenTerms} = file:consult(?TOKEN_CONFIG),
     {token, Token} = lists:keyfind(token, 1, TokenTerms),
     true = ets:insert(?CONF, {token, Token}),
@@ -718,6 +718,17 @@ preprocess_args(Opts, ConfigTerms) ->
 
     true = ets:insert(?CONF, {dry_run, maps:get(dry_run, Opts, false)}),
     true = ets:insert(?CONF, {silent, maps:get(verbose, Opts, false)}),
+
+    ClientVariant =
+        case lists:keyfind(driver, 1, RunTerms) of
+            false ->
+                %% Go runner (new)
+                go_runner;
+            {driver, _} ->
+                %% Erlang runner (old)
+                lasp_bench_runner
+        end,
+    true = ets:insert(?CONF, {client_variant, ClientVariant}),
 
     {ClusterMap, Master}.
 
@@ -821,6 +832,7 @@ push_scripts(ConfigFile, Master, ClusterMap) ->
                 transfer_script(Node, "master.sh"),
                 transfer_script(Node, "server.escript"),
                 transfer_script(Node, "bench.sh"),
+                transfer_script(Node, "erlang_bench.sh"),
                 transfer_script(Node, "my_ip"),
                 transfer_script(Node, "fetch_gh_release.sh"),
                 transfer_script(Node, "measure_cpu.sh"),
@@ -993,10 +1005,20 @@ stop_server(ConfigFile, ClusterMap) ->
     end.
 
 brutal_client_kill(ClusterMap) ->
+    brutal_client_kill(ets:lookup_element(?CONF, client_variant, 2), ClusterMap).
+
+brutal_client_kill(go_runner, ClusterMap) ->
     _ = do_in_nodes_par("kill -9 \\$(pgrep -f runner_linux_amd64)", client_nodes(ClusterMap), ?TIMEOUT),
+    ok;
+
+brutal_client_kill(lasp_bench_runner, ClusterMap) ->
+    _ = do_in_nodes_par("pkill -9 beam", client_nodes(ClusterMap), ?TIMEOUT),
     ok.
 
 download_runner(ClusterMap) ->
+    download_runner(ets:lookup_element(?CONF, client_variant, 2), ClusterMap).
+
+download_runner(go_runner, ClusterMap) ->
     AuthToken = ets:lookup_element(?CONF, token, 2),
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
     NodeNames = client_nodes(ClusterMap),
@@ -1012,10 +1034,38 @@ download_runner(ClusterMap) ->
             {error, Reason};
         _ ->
             ok
+    end;
+
+download_runner(lasp_bench_runner, ClusterMap) ->
+    NodeNames = client_nodes(ClusterMap),
+
+    DownloadRes = do_in_nodes_par_func(
+        fun(Node) -> erlang_client_command(Node, "download") end,
+        NodeNames,
+        ?TIMEOUT
+    ),
+
+    case DownloadRes of
+        {error, Reason} ->
+            {error, Reason};
+        _ ->
+            CompileRes = do_in_nodes_par_func(
+                fun(Node) -> erlang_client_command(Node, "compile") end,
+                NodeNames,
+                ?TIMEOUT
+            ),
+            case CompileRes of
+                {error, Reason1} ->
+                    {error, Reason1};
+                _ ->
+                    ok
+            end
     end.
 
 load_ext(Master, ClusterMap, LoadSpec) ->
+    load_ext(ets:lookup_element(?CONF, client_variant, 2), Master, ClusterMap, LoadSpec).
 
+load_ext(go_runner, Master, ClusterMap, LoadSpec) ->
     Keys = maps:get(key_limit, LoadSpec, 1_000_000),
     ValueBytes = maps:get(val_size, LoadSpec, 256),
 
@@ -1060,9 +1110,57 @@ load_ext(Master, ClusterMap, LoadSpec) ->
             error;
         _ ->
             ok
+    end;
+
+load_ext(lasp_bench_runner, Master, ClusterMap, LoadSpec) ->
+    Keys = maps:get(key_limit, LoadSpec, 1_000_000),
+    ValueBytes = maps:get(val_size, LoadSpec, 256),
+
+    MasterPort = ets:lookup_element(?CONF, master_port, 2),
+
+    TargetClients =
+        maps:fold(
+            fun(Replica, #{clients := C}, Acc) ->
+                [ { Replica, hd(lists:usort(C)) } | Acc ]
+            end,
+            [],
+            ClusterMap
+        ),
+
+    Res =
+        pmap(
+            fun({TargetReplica, ClientNode}) ->
+                ClientNodeStr = atom_to_list(ClientNode),
+                Command = erlang_client_command(
+                    ClientNodeStr,
+                    "load_ext",
+                    atom_to_list(Master),
+                    integer_to_list(MasterPort),
+                    atom_to_list(TargetReplica),
+                    integer_to_list(Keys),
+                    integer_to_list(ValueBytes)
+                ),
+                Cmd = io_lib:format(
+                    "~s \"~s\" ~s",
+                    [?IN_NODES_PATH, Command, ClientNodeStr]
+                ),
+                safe_cmd(Cmd)
+            end,
+            TargetClients,
+            ?TIMEOUT
+        ),
+
+    case Res of
+        {error, _} ->
+            error;
+        _ ->
+            ok
     end.
 
 bench_ext(Master, RunTerms, ClusterMap) ->
+    bench_ext(ets:lookup_element(?CONF, client_variant, 2), Master, RunTerms, ClusterMap).
+
+bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
 
     NodesWithReplicas = [
@@ -1194,6 +1292,85 @@ bench_ext(Master, RunTerms, ClusterMap) ->
             {error, timeout};
         _ ->
             ok
+    end;
+
+bench_ext(lasp_bench_runner, Master, RunTerms, ClusterMap) ->
+    ok = write_terms(filename:join(?CONFIG_DIR, "run.config"), RunTerms),
+    Res = pmap(fun(Node) -> transfer_config(Node, "run.config") end, client_nodes(ClusterMap), ?TIMEOUT),
+    case Res of
+        {error, _} ->
+            error;
+        _ ->
+            NodesWithReplicas = [
+                {Replica, N} ||
+                    {Replica, #{clients := C}} <- maps:to_list(ClusterMap),
+                    N <- lists:usort(C)
+            ],
+
+            MasterPort = ets:lookup_element(?CONF, master_port, 2),
+
+            %% Set up measurements. Sleep on instrumentation node for a bit, then send the script and collect metrics
+            RunsForMinutes = proplists:get_value(duration, RunTerms),
+            MeasureAtMinute = RunsForMinutes / 2,
+            MeasureAt =
+                if MeasureAtMinute < 1 ->
+                    timer:seconds(trunc(MeasureAtMinute * 60));
+                true ->
+                    timer:minutes(trunc(MeasureAtMinute))
+                end,
+
+            % Spawn the CPU measurements
+            Token = async_for(
+                fun(Node) ->
+                    NodeStr = atom_to_list(Node),
+                    HomePath = home_path_for_node(NodeStr),
+                    CPUPath = filename:join(
+                        home_path_for_node(NodeStr),
+                        io_lib:format("~s.cpu", [NodeStr])
+                    ),
+                    Cmd0 = io_lib:format(
+                        "~s/measure_cpu.sh -f ~s",
+                        [HomePath, CPUPath]
+                    ),
+                    timer:sleep(MeasureAt),
+                    Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Cmd0, NodeStr]),
+                    safe_cmd(Cmd)
+                end,
+                all_nodes(ClusterMap)
+            ),
+
+            %% Wait at least the same time that the benchmark is supposed to run
+            BenchTimeout = timer:minutes(RunsForMinutes) + ?TIMEOUT,
+            pmap(
+                fun({Replica, Node}) ->
+                    NodeStr = atom_to_list(Node),
+                    RunConfigPath = filename:join(
+                        home_path_for_node(NodeStr),
+                        "run.config"
+                    ),
+                    Command = erlang_client_command(
+                        NodeStr,
+                        "run",
+                        RunConfigPath,
+                        Master,
+                        integer_to_list(MasterPort),
+                        atom_to_list(Replica)
+                    ),
+                    Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, NodeStr]),
+                    safe_cmd(Cmd)
+                end,
+                NodesWithReplicas,
+                BenchTimeout
+            ),
+
+            %% Ensure that measurements have terminated
+            %% TODO(borja): Since measure_cpu takes half the benchmark, this timeout should be tweaked.
+            case async_for_receive(Token, ?TIMEOUT) of
+                {error, timeout} ->
+                    {error, timeout};
+                _ ->
+                    ok
+            end
     end.
 
 cleanup_master(Master) ->
@@ -1284,9 +1461,9 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
             calendar:system_time_to_rfc3339(erlang:system_time(millisecond), [{unit, millisecond}])
         ]
     ),
-    pull_results_to_path(ConfigFile, ClusterMap, filename:join(ResultsFolder, Path), ShouldArchivePath).
+    pull_results_to_path(ets:lookup_element(?CONF, client_variant, 2), ConfigFile, ClusterMap, filename:join(ResultsFolder, Path), ShouldArchivePath).
 
-pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
+pull_results_to_path(go_runner, ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
     PullClients = fun(Timeout) ->
         pmap(
@@ -1300,6 +1477,117 @@ pull_results_to_path(ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
 
                 %% Compress the results before returning, speeds up transfer
                 _ = do_in_nodes_seq(client_command(NodeStr, GitTag, "compress", ResultPath), [Node]),
+
+                %% Transfer results (-C compresses on flight)
+                safe_cmd(io_lib:format(
+                    "scp -C -i ~s borja.deregil@~s:~s/results.tar.gz ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
+                )),
+
+                safe_cmd(io_lib:format(
+                    "scp -i ~s borja.deregil@~s:~s/~s ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, ConfigFile, TargetPath]
+                )),
+
+                %% Transfer CPU load file
+                safe_cmd(io_lib:format(
+                    "scp -i ~s borja.deregil@~s:~s/~s.cpu ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, NodeStr, TargetPath]
+                )),
+
+                %% Rename configuration to cluster.config
+                safe_cmd(io_lib:format(
+                    "cp ~s ~s/cluster.config",
+                    [filename:join(TargetPath, ConfigFile), TargetPath]
+                )),
+
+                %% Uncompress results
+                safe_cmd(io_lib:format(
+                    "tar -xzf ~s/results.tar.gz -C ~s --strip-components 1",
+                    [TargetPath, TargetPath]
+                )),
+
+                ok
+            end,
+            client_nodes(ClusterMap),
+            Timeout
+        )
+    end,
+
+    PullServerLogs = fun(Timeout) ->
+        pmap(
+            fun(Node) ->
+                NodeStr = atom_to_list(Node),
+                HomePathForNode = home_path_for_node(NodeStr),
+                % Prefix folder with '_' to be excluded later
+                TargetPath = filename:join([?RESULTS_DIR, Path, io_lib:format("_~s", [NodeStr])]),
+
+                safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
+
+                %% Transfer logs (-C compresses on flight)
+                safe_cmd(io_lib:format(
+                    "scp -C -i ~s borja.deregil@~s:~s/~s.log ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, NodeStr, TargetPath]
+                )),
+
+                %% Transfer CPU load file
+                safe_cmd(io_lib:format(
+                    "scp -i ~s borja.deregil@~s:~s/~s.cpu ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, NodeStr, TargetPath]
+                )),
+
+                %% Transfer screenlog file
+                safe_cmd(io_lib:format(
+                    "scp -i ~s borja.deregil@~s:~s/screenlog.0 ~s",
+                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
+                )),
+
+                ok
+            end,
+            server_nodes(ClusterMap),
+            Timeout
+        )
+    end,
+
+    DoFun = fun(Timeout) ->
+        case PullClients(Timeout) of
+            {error, _} ->
+                error;
+            _ ->
+                PullServerLogs(Timeout)
+        end
+    end,
+
+    case DoFun(?TIMEOUT) of
+        error ->
+            error;
+        _ ->
+            case ShouldArchivePath of
+                false ->
+                    %% This experiment is still on-going, don't archive the path
+                    ok;
+                {archive, PathToArchive} ->
+                    %% Compress everything into a single archive file
+                    safe_cmd(io_lib:format(
+                        "./archive_results.sh ~s",
+                        [filename:join(?RESULTS_DIR, PathToArchive)]
+                    )),
+                    ok
+            end
+    end;
+
+pull_results_to_path(lasp_bench_runner, ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
+    PullClients = fun(Timeout) ->
+        pmap(
+            fun(Node) ->
+                NodeStr = atom_to_list(Node),
+                HomePathForNode = home_path_for_node(NodeStr),
+                TargetPath = filename:join([?RESULTS_DIR, Path, NodeStr]),
+
+                safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
+
+                %% Compress the results before returning, speeds up transfer
+                _ = do_in_nodes_seq(erlang_client_command(NodeStr, "compress"), [Node]),
 
                 %% Transfer results (-C compresses on flight)
                 safe_cmd(io_lib:format(
@@ -1686,6 +1974,27 @@ client_command(NodeStr, GitTag, Command, Arg1, Arg2, Arg3, Arg4, Arg5) ->
     io_lib:format(
         "~s/bench.sh -H ~s -T ~s ~s ~s ~s ~s ~s ~s",
         [HomePath, HomePath, GitTag, Command, Arg1, Arg2, Arg3, Arg4, Arg5]
+    ).
+
+erlang_client_command(NodeStr, Command) ->
+    HomePath = home_path_for_node(NodeStr),
+    io_lib:format(
+        "~s/erlang_bench.sh -H ~s ~s",
+        [HomePath, HomePath, Command]
+    ).
+
+erlang_client_command(NodeStr, Command, Arg1, Arg2, Arg3, Arg4) ->
+    HomePath = home_path_for_node(NodeStr),
+    io_lib:format(
+        "~s/erlang_bench.sh -H ~s ~s ~s ~s ~s ~s",
+        [HomePath, HomePath, Command, Arg1, Arg2, Arg3, Arg4]
+    ).
+
+erlang_client_command(NodeStr, Command, Arg1, Arg2, Arg3, Arg4, Arg5) ->
+    HomePath = home_path_for_node(NodeStr),
+    io_lib:format(
+        "~s/erlang_bench.sh -H ~s ~s ~s ~s ~s ~s ~s",
+        [HomePath, HomePath, Command, Arg1, Arg2, Arg3, Arg4, Arg5]
     ).
 
 transfer_script(Node, File) ->
