@@ -147,6 +147,16 @@ materialize_single_experiment(ClusterTerms, RunTerms, LoadSpec, Exp = #{clients 
 
 materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment = #{clients := N})
     when is_integer(N) ->
+        ClientVariant =
+            case lists:keyfind(driver, 1, TemplateTerms) of
+                false ->
+                    %% Go runner (new)
+                    go_runner;
+                {driver, _} ->
+                    %% Erlang runner (old)
+                    lasp_bench_runner
+            end,
+
         %% Sanity check
         Workers = erlang:max(N, 1),
 
@@ -198,7 +208,8 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     update_distinct -> VerifyOp(Op, [writeonly_ops]);
                     update_distinct_measure -> VerifyOp(Op, [writeonly_ops]);
                     update_track -> VerifyOp(Op, [writeonly_ops]);
-                    mixed -> VerifyOp(Op, [readonly_ops, writeonly_ops]);
+                    mixed when ClientVariant =:= go_runner -> VerifyOp(Op, [readonly_ops, writeonly_ops]);
+                    mixed when ClientVariant =:= lasp_bench_runner -> VerifyOp(Op, [mixed_read_write]);
                     no_tx_read -> VerifyOp(Op, [readonly_ops]);
                     no_tx_read_with_id -> VerifyOp(Op, [readonly_ops]);
                     _ ->
@@ -213,9 +224,17 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
             Ops
         ),
 
+        RunWith1 =
+            case ClientVariant of
+                go_runner ->
+                    RunWith;
+                lasp_bench_runner ->
+                    RunWith#{operations => [{OpName, 1} || OpName <- Ops]}
+            end,
+
         % Fill all template values from experiment definition
         ExperimentTerms =
-            maps:fold(ReplaceKeyFun, TermsWithConcurrent, RunWith),
+            maps:fold(ReplaceKeyFun, TermsWithConcurrent, RunWith1),
 
         % Fill all cluster template values from definition
         RunOnTerms = maps:get(run_on, Experiment),

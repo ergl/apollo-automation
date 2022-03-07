@@ -69,7 +69,7 @@ do_run() {
 }
 
 usage() {
-    echo "bench.sh [-h] [-H <home>] download | compile | load_ext <master-node> <master-port> <replica> <keys> <value_bytes> | run <config> <master-node> <master-port> <replica> | rebuild | compress"
+    echo "erlang_bench.sh [-h] [-H <home>] download | compile | load_ext <master-node> <master-port> <replica> <keys> <value_bytes> | run <config> <master-node> <master-port> <replica> | rebuild | compress"
 }
 
 run () {
