@@ -4,7 +4,7 @@
 {report_interval,5}.
 {concurrent,'_'}.
 
-{key_generator, {{int_to_bin_bigendian, 64}, {uniform_int, 1000000}}}.
+{key_generator, '_'}.
 {value_generator, {fixed_bin, 256}}.
 {pre_hook, {hook_ext, start}}.
 {pre_hook_args, [[{conn_pool_size, 12}, {connection_opts, #{}}]]}.
