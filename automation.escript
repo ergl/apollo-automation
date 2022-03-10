@@ -249,14 +249,78 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
 
         ok = verify_leader_preferences(Experiment, maps:from_list(ConfigTerms)),
 
+        Failures = maps:get(failures_after, Experiment, #{}),
+        FailureSpec = build_failure_spec(Experiment, maps:from_list(ConfigTerms), Failures),
+
         [
             #{
                 config_terms => ConfigTerms,
                 results_folder => maps:get(results_folder, Experiment),
                 run_terms => ExperimentTerms,
-                load_spec => LoadSpec
+                load_spec => LoadSpec,
+                failure_spec => FailureSpec
             }
         ].
+
+build_failure_spec(Experiment, ConfigTerms, Failures) ->
+    #{clusters := ClusterMap} = ConfigTerms,
+
+    %% First, verify that all clusters specified in Failures do exist
+    lists:foreach(
+        fun
+            (C) when is_map_key(C, ClusterMap) ->
+                ok;
+            (Unknown) ->
+                io:fwrite(
+                    standard_error,
+                    "[~s] Failure map contains unrecognized replica: ~p~n",
+                    [maps:get(results_folder, Experiment), Unknown]
+                ),
+                throw(error)
+        end,
+        maps:keys(Failures)
+    ),
+
+    maps:fold(
+        fun(Cluster, TimeSpec, Acc) ->
+            case parse_failure_time_spec(TimeSpec) of
+                error ->
+                    io:fwrite(
+                        standard_error,
+                        "[~s] Failure map contains unrecognized time spec: ~p~n",
+                        [maps:get(results_folder, Experiment), TimeSpec]
+                    ),
+                    throw(error);
+
+                {ok, FailureTime} ->
+                    Servers = maps:get(servers, maps:get(Cluster, ClusterMap)),
+                    lists:foldl(
+                        fun(Server, InnerAcc) ->
+                            InnerAcc#{Server => FailureTime}
+                        end,
+                        Acc,
+                        Servers
+                    )
+            end
+        end,
+        #{},
+        Failures
+    ).
+
+parse_failure_time_spec(Time) when is_integer(Time) ->
+    {ok, Time};
+
+parse_failure_time_spec({milliseconds, Time}) ->
+    {ok, Time};
+
+parse_failure_time_spec({minutes, Time}) ->
+    {ok, timer:minutes(Time)};
+
+parse_failure_time_spec({seconds, Time}) ->
+    {ok, time:seconds(Time)};
+
+parse_failure_time_spec(_) ->
+    error.
 
 verify_leader_preferences(Exp, #{leader_preference := Pref} = ConfigTerms) when is_atom(Pref) ->
     verify_leader_preferences(Exp, ConfigTerms#{leader_preference => [Pref]});
@@ -548,7 +612,8 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
         config_terms := ConfigTerms,
         results_folder := Results,
         run_terms := RunTerms,
-        load_spec := LoadSpec
+        load_spec := LoadSpec,
+        failure_spec := FailureSpec
     } = Spec,
 
     _ = ets:new(?CONF, [set, named_table]),
@@ -590,7 +655,7 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
 
                     %% Actual experiment: load then bench
                     ok = load_ext(Master, ClusterMap, LoadSpec),
-                    ok = bench_ext(Master, RunTerms, ClusterMap),
+                    ok = bench_ext(Master, RunTerms, ClusterMap, {ConfigFile, FailureSpec}),
 
                     %% Give system some time (1 sec) to stabilise
                     ok = timer:sleep(1000),
@@ -1023,6 +1088,15 @@ stop_server(ConfigFile, ClusterMap) ->
             ok
     end.
 
+stop_single_server(ConfigFile, Node) ->
+    case do_in_nodes_par(server_command(ConfigFile, "stop"), [Node], ?TIMEOUT) of
+        {error, _} ->
+            error;
+        Res ->
+            io:format("~p~n", [Res]),
+            ok
+    end.
+
 brutal_client_kill(ClusterMap) ->
     brutal_client_kill(ets:lookup_element(?CONF, client_variant, 2), ClusterMap).
 
@@ -1176,10 +1250,10 @@ load_ext(lasp_bench_runner, Master, ClusterMap, LoadSpec) ->
             ok
     end.
 
-bench_ext(Master, RunTerms, ClusterMap) ->
-    bench_ext(ets:lookup_element(?CONF, client_variant, 2), Master, RunTerms, ClusterMap).
+bench_ext(Master, RunTerms, ClusterMap, FailureSpec) ->
+    bench_ext(ets:lookup_element(?CONF, client_variant, 2), Master, RunTerms, ClusterMap, FailureSpec).
 
-bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
+bench_ext(go_runner, Master, RunTerms, ClusterMap, {ConfigFile, FailureSpec}) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
 
     NodesWithReplicas = [
@@ -1279,6 +1353,19 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
         ?TIMEOUT
     ),
 
+    % If any, kill some server nodes after the specified time
+    maps:foreach(
+        fun(Server, FailAfter) ->
+            erlang:spawn(
+                fun() ->
+                    ok = timer:sleep(FailAfter),
+                    stop_single_server(ConfigFile, Server)
+                end
+            )
+        end,
+        FailureSpec
+    ),
+
     %% Wait at least the same time that the benchmark is supposed to run
     BenchTimeout = timer:minutes(RunsForMinutes) + ?TIMEOUT,
     pmap(
@@ -1313,7 +1400,7 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
             ok
     end;
 
-bench_ext(lasp_bench_runner, Master, RunTerms, ClusterMap) ->
+bench_ext(lasp_bench_runner, Master, RunTerms, ClusterMap, {ConfigFile, FailureSpec}) ->
     ok = write_terms(filename:join(?CONFIG_DIR, "run.config"), RunTerms),
     Res = pmap(fun(Node) -> transfer_config(Node, "run.config") end, client_nodes(ClusterMap), ?TIMEOUT),
     case Res of
@@ -1356,6 +1443,19 @@ bench_ext(lasp_bench_runner, Master, RunTerms, ClusterMap) ->
                     safe_cmd(Cmd)
                 end,
                 all_nodes(ClusterMap)
+            ),
+
+            % If any, kill some server nodes after the specified time
+            maps:foreach(
+                fun(Server, FailAfter) ->
+                    erlang:spawn(
+                        fun() ->
+                            ok = timer:sleep(FailAfter),
+                            stop_single_server(ConfigFile, Server)
+                        end
+                    )
+                end,
+                FailureSpec
             ),
 
             %% Wait at least the same time that the benchmark is supposed to run
