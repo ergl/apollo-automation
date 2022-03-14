@@ -14,4 +14,3 @@
 {log_level, 2}.
 {commit_gc_interval_ms, 5000}.
 {worker_threads, 12}.
-{client_delay_ms, '_'}.

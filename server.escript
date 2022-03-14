@@ -177,18 +177,10 @@ start_ext(Replica, Config) ->
                 ArgString3
             end,
 
-    ArgString5 =
-        case get_config_key(client_delay_ms, Config) of
-            {ok, ClientDelay} ->
-                ArgString4 ++ io_lib:format(" -clientReplyDelay ~s", [to_go_duration(ClientDelay)]);
-            error ->
-                ArgString4
-        end,
-
     {ok, Tag} = get_config_key(ext_tag, Config),
     Cmd = io_lib:format(
         "screen -dmSL ~s ./sources/~s/~s ~s",
-        [?DEFAULT_BIN_NAME, Tag, ?DEFAULT_BIN_NAME, ArgString5]
+        [?DEFAULT_BIN_NAME, Tag, ?DEFAULT_BIN_NAME, ArgString4]
     ),
 
     os_cmd(Cmd),
