@@ -735,10 +735,11 @@ preprocess_args(Opts, ConfigTerms, RunTerms) ->
     true = ets:insert(?CONF, {leaders, Leaders}),
 
     case lists:keyfind(cpu_profile, 1, ConfigTerms) of
-        false ->
-            ok;
-        {cpu_profile, ProfilePath} ->
-            true = ets:insert(?CONF, {cpu_profile, ProfilePath})
+        {cpu_profile, ProfilePath} when is_list(ProfilePath) ->
+            true = ets:insert(?CONF, {cpu_profile, ProfilePath});
+        _ ->
+            % Key might not be present, or might be default ('_')
+            ok
     end,
 
     Servers = ordsets:from_list(server_nodes(ClusterMap)),
@@ -1679,6 +1680,7 @@ pull_results_to_path(go_runner, ConfigFile, ClusterMap, Path, ShouldArchivePath)
                             [?SSH_PRIV_KEY, NodeStr, HomePathForNode, Path, TargetPath]
                         ));
                     _ ->
+                        io:format("No cpu profile found~n"),
                         ok
                 end,
 
