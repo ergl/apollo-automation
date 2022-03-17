@@ -1184,6 +1184,14 @@ pull_results(go_runner, ConfigFile, Path, ClusterMap) ->
         )
     end,
 
+    CPUProfilePath =
+        case ets:lookup(?CONF, cpu_profile) of
+            [{cpu_profile, Path}] ->
+                {ok, Path};
+            _ ->
+                empty
+        end,
+
     PullServerLogs = fun(Timeout) ->
         pmap(
             fun(Node) ->
@@ -1217,6 +1225,18 @@ pull_results(go_runner, ConfigFile, Path, ClusterMap) ->
                     "scp -i ~s borja.deregil@~s:~s/screenlog.0 ~s",
                     [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
                 )),
+
+                %% Transfer cpu profile file, if it exists
+                case CPUProfilePath of
+                    {ok, Path} ->
+                        safe_cmd(io_lib:format(
+                            "scp -C -i ~s borja.deregil@~s:~s/~s ~s",
+                            [?SSH_PRIV_KEY, NodeStr, HomePathForNode, Path, TargetPath]
+                        ));
+                    _ ->
+                        io:format("No cpu profile found~n"),
+                        ok
+                end,
 
                 ok
             end,
