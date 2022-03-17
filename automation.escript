@@ -1585,20 +1585,33 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
     ),
     pull_results_to_path(ets:lookup_element(?CONF, client_variant, 2), ConfigFile, ClusterMap, filename:join(ResultsFolder, Path), ShouldArchivePath).
 
-pull_results_to_path(go_runner, ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
-    GitTag = ets:lookup_element(?CONF, ext_tag, 2),
+pull_results_to_path(ClientVariant, ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
+    GitTag =
+        case ClientVariant of
+            go_runner -> ets:lookup_element(?CONF, ext_tag, 2);
+            lasp_bench_runner -> error
+        end,
+
     PullClients = fun(Timeout) ->
         pmap(
             fun(Node) ->
                 NodeStr = atom_to_list(Node),
                 HomePathForNode = home_path_for_node(NodeStr),
-                ResultPath = io_lib:format("~s/runner_results/current", [home_path_for_node(NodeStr)]),
                 TargetPath = filename:join([?RESULTS_DIR, Path, NodeStr]),
 
                 safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
 
+                CompressCmd =
+                    case ClientVariant of
+                        go_runner ->
+                            ResultPath = io_lib:format("~s/runner_results/current", [home_path_for_node(NodeStr)]),
+                            client_command(NodeStr, GitTag, "compress", ResultPath);
+                        lasp_bench_runner ->
+                            erlang_client_command(NodeStr, "compress")
+                    end,
+
                 %% Compress the results before returning, speeds up transfer
-                _ = do_in_nodes_seq(client_command(NodeStr, GitTag, "compress", ResultPath), [Node]),
+                _ = do_in_nodes_seq(CompressCmd, [Node]),
 
                 %% Transfer results (-C compresses on flight)
                 safe_cmd(io_lib:format(
@@ -1683,117 +1696,6 @@ pull_results_to_path(go_runner, ConfigFile, ClusterMap, Path, ShouldArchivePath)
                         io:format("No cpu profile found~n"),
                         ok
                 end,
-
-                ok
-            end,
-            server_nodes(ClusterMap),
-            Timeout
-        )
-    end,
-
-    DoFun = fun(Timeout) ->
-        case PullClients(Timeout) of
-            {error, _} ->
-                error;
-            _ ->
-                PullServerLogs(Timeout)
-        end
-    end,
-
-    case DoFun(?TIMEOUT) of
-        error ->
-            error;
-        _ ->
-            case ShouldArchivePath of
-                false ->
-                    %% This experiment is still on-going, don't archive the path
-                    ok;
-                {archive, PathToArchive} ->
-                    %% Compress everything into a single archive file
-                    safe_cmd(io_lib:format(
-                        "./archive_results.sh ~s",
-                        [filename:join(?RESULTS_DIR, PathToArchive)]
-                    )),
-                    ok
-            end
-    end;
-
-pull_results_to_path(lasp_bench_runner, ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
-    PullClients = fun(Timeout) ->
-        pmap(
-            fun(Node) ->
-                NodeStr = atom_to_list(Node),
-                HomePathForNode = home_path_for_node(NodeStr),
-                TargetPath = filename:join([?RESULTS_DIR, Path, NodeStr]),
-
-                safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
-
-                %% Compress the results before returning, speeds up transfer
-                _ = do_in_nodes_seq(erlang_client_command(NodeStr, "compress"), [Node]),
-
-                %% Transfer results (-C compresses on flight)
-                safe_cmd(io_lib:format(
-                    "scp -C -i ~s borja.deregil@~s:~s/results.tar.gz ~s",
-                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
-                )),
-
-                safe_cmd(io_lib:format(
-                    "scp -i ~s borja.deregil@~s:~s/~s ~s",
-                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, ConfigFile, TargetPath]
-                )),
-
-                %% Transfer CPU load file
-                safe_cmd(io_lib:format(
-                    "scp -i ~s borja.deregil@~s:~s/~s.cpu ~s",
-                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, NodeStr, TargetPath]
-                )),
-
-                %% Rename configuration to cluster.config
-                safe_cmd(io_lib:format(
-                    "cp ~s ~s/cluster.config",
-                    [filename:join(TargetPath, ConfigFile), TargetPath]
-                )),
-
-                %% Uncompress results
-                safe_cmd(io_lib:format(
-                    "tar -xzf ~s/results.tar.gz -C ~s --strip-components 1",
-                    [TargetPath, TargetPath]
-                )),
-
-                ok
-            end,
-            client_nodes(ClusterMap),
-            Timeout
-        )
-    end,
-
-    PullServerLogs = fun(Timeout) ->
-        pmap(
-            fun(Node) ->
-                NodeStr = atom_to_list(Node),
-                HomePathForNode = home_path_for_node(NodeStr),
-                % Prefix folder with '_' to be excluded later
-                TargetPath = filename:join([?RESULTS_DIR, Path, io_lib:format("_~s", [NodeStr])]),
-
-                safe_cmd(io_lib:format("mkdir -p ~s", [TargetPath])),
-
-                %% Transfer logs (-C compresses on flight)
-                safe_cmd(io_lib:format(
-                    "scp -C -i ~s borja.deregil@~s:~s/~s.log ~s",
-                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, NodeStr, TargetPath]
-                )),
-
-                %% Transfer CPU load file
-                safe_cmd(io_lib:format(
-                    "scp -i ~s borja.deregil@~s:~s/~s.cpu ~s",
-                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, NodeStr, TargetPath]
-                )),
-
-                %% Transfer screenlog file
-                safe_cmd(io_lib:format(
-                    "scp -i ~s borja.deregil@~s:~s/screenlog.0 ~s",
-                    [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
-                )),
 
                 ok
             end,
