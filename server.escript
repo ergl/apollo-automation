@@ -189,10 +189,10 @@ start_ext(Replica, Config) ->
 
 stop_ext(Config) ->
     ok = case get_config_key(cpu_profile, Config) of
-        error ->
-            stop_ext_normal();
-        {ok, _} ->
-            stop_ext_profile(get_config_key(ext_dc_port, Config, ?DEFAULT_INTER_DC_PORT))
+        {ok, FilePath} when is_list(FilePath) ->
+            stop_ext_profile(get_config_key(ext_dc_port, Config, ?DEFAULT_INTER_DC_PORT));
+        _ ->
+            stop_ext_normal()
     end.
 
 stop_ext_normal() ->

@@ -1586,12 +1586,7 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
     pull_results_to_path(ets:lookup_element(?CONF, client_variant, 2), ConfigFile, ClusterMap, filename:join(ResultsFolder, Path), ShouldArchivePath).
 
 pull_results_to_path(ClientVariant, ConfigFile, ClusterMap, Path, ShouldArchivePath) ->
-    GitTag =
-        case ClientVariant of
-            go_runner -> ets:lookup_element(?CONF, ext_tag, 2);
-            lasp_bench_runner -> error
-        end,
-
+    GitTag = ets:lookup_element(?CONF, ext_tag, 2),
     PullClients = fun(Timeout) ->
         pmap(
             fun(Node) ->
@@ -1649,14 +1644,6 @@ pull_results_to_path(ClientVariant, ConfigFile, ClusterMap, Path, ShouldArchiveP
         )
     end,
 
-    CPUProfilePath =
-        case ets:lookup(?CONF, cpu_profile) of
-            [{cpu_profile, Path}] ->
-                {ok, Path};
-            _ ->
-                empty
-        end,
-
     PullServerLogs = fun(Timeout) ->
         pmap(
             fun(Node) ->
@@ -1685,12 +1672,18 @@ pull_results_to_path(ClientVariant, ConfigFile, ClusterMap, Path, ShouldArchiveP
                     [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
                 )),
 
-                %% Transfer cpu profile file, if it exists
-                case CPUProfilePath of
-                    {ok, Path} ->
+                case ets:lookup(?CONF, cpu_profile) of
+                    [{cpu_profile, CPUPath}] ->
+                        %% Transfer cpu profile file, if it exists
                         safe_cmd(io_lib:format(
                             "scp -C -i ~s borja.deregil@~s:~s/~s ~s",
-                            [?SSH_PRIV_KEY, NodeStr, HomePathForNode, Path, TargetPath]
+                            [?SSH_PRIV_KEY, NodeStr, HomePathForNode, CPUPath, TargetPath]
+                        )),
+
+                        %% We also need the binary that produced the profile file
+                        safe_cmd(io_lib:format(
+                            "scp -C -i ~s borja.deregil@~s:~s/sources/~s/server_linux_amd64 ~s",
+                            [?SSH_PRIV_KEY, NodeStr, HomePathForNode, GitTag, TargetPath]
                         ));
                     _ ->
                         io:format("No cpu profile found~n"),

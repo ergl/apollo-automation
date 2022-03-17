@@ -59,6 +59,7 @@
     , {start_master, false}
     , {stop_master, false}
     , {start_servers, false}
+    , {dump_profile, false}
     , {stop_servers, false}
     , {start, false}
     , {stop, false}
@@ -297,6 +298,9 @@ do_command(start_servers, _Master, ClusterMap, _) ->
 
 do_command(stop_servers, _Master, ClusterMap, _) ->
     ok = stop_server(?CONFIG_FILE, ClusterMap);
+
+do_command(dump_profile, _Master, ClusterMap, _) ->
+    ok = dump_profile(?CONFIG_FILE, ClusterMap);
 
 do_command(start, Master, ClusterMap, LatencyMap) ->
     ok = do_command(start_master, Master, ClusterMap, LatencyMap),
@@ -617,6 +621,20 @@ stop_server(ConfigFile, ClusterMap) ->
         Res ->
             io:format("~p~n", [Res]),
             ok
+    end.
+
+dump_profile(ConfigFile, ClusterMap) ->
+    case ets:lookup(?CONF, cpu_profile) of
+        [] ->
+            ok;
+        _ ->
+            case do_in_nodes_par(server_command(ConfigFile, "profile"), server_nodes(ClusterMap), ?TIMEOUT) of
+                {error, _} ->
+                    error;
+                Res ->
+                    io:format("~p~n", [Res]),
+                    ok
+            end
     end.
 
 brutal_client_kill(ClusterMap) ->
@@ -1134,12 +1152,7 @@ cleanup_clients(ClusterMap) ->
     ok.
 
 pull_results(ClientVariant, ConfigFile, Path, ClusterMap) ->
-    GitTag =
-        case ClientVariant of
-            go_runner -> ets:lookup_element(?CONF, ext_tag, 2);
-            lasp_bench_runner -> error
-        end,
-
+    GitTag = ets:lookup_element(?CONF, ext_tag, 2),
     PullClients = fun(Timeout) ->
         pmap(
             fun(Node) ->
@@ -1197,14 +1210,6 @@ pull_results(ClientVariant, ConfigFile, Path, ClusterMap) ->
         )
     end,
 
-    CPUProfilePath =
-        case ets:lookup(?CONF, cpu_profile) of
-            [{cpu_profile, Path}] ->
-                {ok, Path};
-            _ ->
-                empty
-        end,
-
     PullServerLogs = fun(Timeout) ->
         pmap(
             fun(Node) ->
@@ -1239,12 +1244,18 @@ pull_results(ClientVariant, ConfigFile, Path, ClusterMap) ->
                     [?SSH_PRIV_KEY, NodeStr, HomePathForNode, TargetPath]
                 )),
 
-                %% Transfer cpu profile file, if it exists
-                case CPUProfilePath of
-                    {ok, Path} ->
+                case ets:lookup(?CONF, cpu_profile) of
+                    [{cpu_profile, CPUPath}] ->
+                        %% Transfer cpu profile file, if it exists
                         safe_cmd(io_lib:format(
                             "scp -C -i ~s borja.deregil@~s:~s/~s ~s",
-                            [?SSH_PRIV_KEY, NodeStr, HomePathForNode, Path, TargetPath]
+                            [?SSH_PRIV_KEY, NodeStr, HomePathForNode, CPUPath, TargetPath]
+                        )),
+
+                        %% We also need the binary that produced the profile file
+                        safe_cmd(io_lib:format(
+                            "scp -C -i ~s borja.deregil@~s:~s/sources/~s/server_linux_amd64 ~s",
+                            [?SSH_PRIV_KEY, NodeStr, HomePathForNode, GitTag, TargetPath]
                         ));
                     _ ->
                         io:format("No cpu profile found~n"),
