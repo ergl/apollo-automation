@@ -661,6 +661,9 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
                     %% Give system some time (1 sec) to stabilise
                     ok = timer:sleep(1000),
 
+                    %% If we enabled CPU profiling, make sure to dump it to disk
+                    ok = dump_server_profile(ConfigFile, ClusterMap),
+
                     %% Gather all results from the experiment
                     %% If Results =/= NextResults, then we can archive the entire path
                     ShouldArchive =
@@ -1097,6 +1100,20 @@ stop_single_server(ConfigFile, Node) ->
         Res ->
             io:format("~p~n", [Res]),
             ok
+    end.
+
+dump_server_profile(ConfigFile, ClusterMap) ->
+    case ets:lookup(?CONF, cpu_profile) of
+        [] ->
+            ok;
+        _ ->
+            case do_in_nodes_par(server_command(ConfigFile, "profile"), server_nodes(ClusterMap), ?TIMEOUT) of
+                {error, _} ->
+                    error;
+                Res ->
+                    io:format("~p~n", [Res]),
+                    ok
+            end
     end.
 
 brutal_client_kill(ClusterMap) ->
