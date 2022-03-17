@@ -163,10 +163,11 @@ preprocess_args(Opts, ConfigTerms, RunTerms) ->
     true = ets:insert(?CONF, {leader_preference, PrefList}),
 
     case lists:keyfind(cpu_profile, 1, ConfigTerms) of
-        false ->
-            ok;
-        {cpu_profile, ProfilePath} ->
-            true = ets:insert(?CONF, {cpu_profile, ProfilePath})
+        {cpu_profile, ProfilePath} when is_list(ProfilePath) ->
+            true = ets:insert(?CONF, {cpu_profile, ProfilePath});
+        _ ->
+            % Key might not be present, or might be default ('_')
+            ok
     end,
 
     Servers = ordsets:from_list(server_nodes(ClusterMap)),

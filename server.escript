@@ -4,7 +4,7 @@
 
 -export([main/1]).
 
--define(DEFAULT_LOG_PATH, "/home/borja.deregil").
+-define(HOME_DIRECTORY, "/home/borja.deregil").
 -define(DEFAULT_LOG_LEVEL, 2).
 -define(DEFAULT_BIN_NAME, "server_linux_amd64").
 -define(DEFAULT_LOG_SIZE, 25).
@@ -122,7 +122,7 @@ start_ext(Replica, Config) ->
         ?DEFAULT_FAULT_TOLERANCE_FACTOR
     ),
 
-    LogPath = get_config_key(log_path, Config, ?DEFAULT_LOG_PATH),
+    LogPath = get_config_key(log_path, Config, ?HOME_DIRECTORY),
     LOG_LEVEL = get_config_key(log_level, Config, ?DEFAULT_LOG_LEVEL),
     LOG_FILE = get_log_file(LogPath),
 
@@ -147,9 +147,9 @@ start_ext(Replica, Config) ->
 
     ArgString1 =
         case get_config_key(cpu_profile, Config) of
-            {ok, FilePath} ->
-                ArgString0 ++ io_lib:format(" -cpuprofile ~s", [FilePath]);
-            error ->
+            {ok, FilePath} when is_list(FilePath) ->
+                ArgString0 ++ io_lib:format(" -cpuprofile ~s/~s", [?HOME_DIRECTORY, FilePath]);
+            _ ->
                 ArgString0
         end,
 
