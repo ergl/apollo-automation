@@ -211,6 +211,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     update_release -> VerifyOp(Op, [writeonly_ops]);
                     update_retry -> VerifyOp(Op, [writeonly_ops]);
                     update_release_retry -> VerifyOp(Op, [writeonly_ops]);
+                    update_track_wait -> VerifyOp(Op, [writeonly_ops]);
                     mixed when ClientVariant =:= go_runner -> VerifyOp(Op, [readonly_ops, writeonly_ops]);
                     mixed when ClientVariant =:= lasp_bench_runner -> VerifyOp(Op, [mixed_read_write]);
                     no_tx_read -> VerifyOp(Op, [readonly_ops]);
@@ -1568,6 +1569,7 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
             (update_track) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (update_retry) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (update_release_retry) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
+            (update_track_wait) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (mixed) ->
                 R = proplists:get_value(readonly_ops, RunTerms),
                 W = proplists:get_value(writeonly_ops, RunTerms),
