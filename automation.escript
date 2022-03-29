@@ -192,6 +192,36 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                 )
             end,
 
+        VerifyOpMetrics =
+            fun(Op, Keys) when is_list(Keys) ->
+                case RunWith of
+                    #{metrics := MetricList} when is_list(MetricList) ->
+                        lists:foreach(
+                            fun(Key) ->
+                                case lists:member(Key, MetricList) of
+                                    true ->
+                                        ok;
+                                    false ->
+                                        io:fwrite(
+                                            standard_error,
+                                            "[~s] Operation ~p needed metric '~p', but it's not present in spec. Found metrics ~p~n",
+                                            [maps:get(results_folder, Experiment), Op, Key, MetricList]
+                                        ),
+                                        throw(error)
+                                end
+                            end,
+                            Keys
+                        );
+                    _ ->
+                        io:fwrite(
+                            standard_error,
+                            "[~s] Operation ~p expected metrics ~p, but no metric is present~n",
+                            [maps:get(results_folder, Experiment), Op, Keys]
+                        ),
+                        throw(error)
+                end
+            end,
+
         Ops = maps:get(operations, RunWith),
         lists:foreach(
             fun(Op) ->
@@ -212,7 +242,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     update_retry -> VerifyOp(Op, [writeonly_ops]);
                     update_release_retry -> VerifyOp(Op, [writeonly_ops]);
                     update_track_wait -> VerifyOp(Op, [writeonly_ops]);
-                    update_measure -> VerifyOp(Op, [writeonly_ops]);
+                    update_measure -> VerifyOp(Op, [writeonly_ops]), VerifyOpMetrics(Op, [waitqueue_size]);
                     mixed when ClientVariant =:= go_runner -> VerifyOp(Op, [readonly_ops, writeonly_ops]);
                     mixed when ClientVariant =:= lasp_bench_runner -> VerifyOp(Op, [mixed_read_write]);
                     no_tx_read -> VerifyOp(Op, [readonly_ops]);
