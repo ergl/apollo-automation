@@ -13,3 +13,5 @@
 {readonly_ops, '_'}.
 {writeonly_ops, '_'}.
 {retry_aborts, '_'}.
+
+{commit_timeout, {seconds, 10}}.

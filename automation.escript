@@ -318,7 +318,7 @@ build_failure_spec(Experiment, ConfigTerms, Failures) ->
 
     maps:fold(
         fun(Cluster, TimeSpec, Acc) ->
-            case parse_failure_time_spec(TimeSpec) of
+            case parse_timeout_spec(TimeSpec) of
                 error ->
                     io:fwrite(
                         standard_error,
@@ -342,19 +342,19 @@ build_failure_spec(Experiment, ConfigTerms, Failures) ->
         Failures
     ).
 
-parse_failure_time_spec(Time) when is_integer(Time) ->
+parse_timeout_spec(Time) when is_integer(Time) ->
     {ok, Time};
 
-parse_failure_time_spec({milliseconds, Time}) ->
+parse_timeout_spec({milliseconds, Time}) ->
     {ok, Time};
 
-parse_failure_time_spec({minutes, Time}) ->
+parse_timeout_spec({minutes, Time}) ->
     {ok, timer:minutes(Time)};
 
-parse_failure_time_spec({seconds, Time}) ->
-    {ok, time:seconds(Time)};
+parse_timeout_spec({seconds, Time}) ->
+    {ok, timer:seconds(Time)};
 
-parse_failure_time_spec(_) ->
+parse_timeout_spec(_) ->
     error.
 
 verify_leader_preferences(Exp, #{leader_preference := Pref} = ConfigTerms) when is_atom(Pref) ->
@@ -1361,6 +1361,9 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, {ConfigFile, FailureSpec}) ->
                             Acc,
                             MetricList
                         );
+                    {commit_timeout, TimeoutSpec} ->
+                        {ok, Millis} = parse_timeout_spec(TimeoutSpec),
+                        io_lib:format("~s -commitTimeout ~s", [Acc, to_go_duration(Millis)]);
                     _ ->
                         Acc
                 end
@@ -2229,6 +2232,8 @@ write_terms(FileName, Terms) ->
     Format = fun(Term) -> io_lib:format("~tp.~n", [Term]) end,
     Text = unicode:characters_to_binary(lists:map(Format, Terms)),
     file:write_file(FileName, Text).
+
+to_go_duration(TimeMs) -> io_lib:format("~bms", [TimeMs]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% getopt

@@ -848,6 +848,9 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                             Acc,
                             MetricList
                         );
+                    {commit_timeout, TimeoutSpec} ->
+                        {ok, Millis} = parse_timeout_spec(TimeoutSpec),
+                        io_lib:format("~s -commitTimeout ~s", [Acc, to_go_duration(Millis)]);
                     _ ->
                         Acc
                 end
@@ -1071,6 +1074,9 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                             Acc,
                             MetricList
                         );
+                    {commit_timeout, TimeoutSpec} ->
+                        {ok, Millis} = parse_timeout_spec(TimeoutSpec),
+                        io_lib:format("~s -commitTimeout ~s", [Acc, to_go_duration(Millis)]);
                     _ ->
                         Acc
                 end
@@ -1304,6 +1310,23 @@ pull_results(ClientVariant, ConfigFile, Path, ClusterMap) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Util
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+parse_timeout_spec(Time) when is_integer(Time) ->
+{ok, Time};
+
+parse_timeout_spec({milliseconds, Time}) ->
+    {ok, Time};
+
+parse_timeout_spec({minutes, Time}) ->
+    {ok, timer:minutes(Time)};
+
+parse_timeout_spec({seconds, Time}) ->
+    {ok, timer:seconds(Time)};
+
+parse_timeout_spec(_) ->
+    error.
+
+to_go_duration(TimeMs) -> io_lib:format("~bms", [TimeMs]).
 
 -spec home_path_for_node(string()) -> string().
 home_path_for_node(NodeStr) ->
