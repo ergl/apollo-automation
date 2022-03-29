@@ -840,6 +840,14 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                             Acc,
                             OpList
                         );
+                    {metrics, MetricList} when is_list(MetricList) ->
+                        lists:foldl(
+                            fun(Metric, InnerAcc) ->
+                                io_lib:format("~s -metric ~s", [InnerAcc, atom_to_list(Metric)])
+                            end,
+                            Acc,
+                            MetricList
+                        );
                     _ ->
                         Acc
                 end
@@ -1054,6 +1062,14 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                             end,
                             Acc,
                             OpList
+                        );
+                    {metrics, MetricList} when is_list(MetricList) ->
+                        lists:foldl(
+                            fun(Metric, InnerAcc) ->
+                                io_lib:format("~s -metric ~s", [InnerAcc, atom_to_list(Metric)])
+                            end,
+                            Acc,
+                            MetricList
                         );
                     _ ->
                         Acc
