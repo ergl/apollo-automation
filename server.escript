@@ -175,12 +175,39 @@ start_ext(Replica, Config) ->
                 ArgString3 ++ io_lib:format(" -committedGCInterval ~s", [to_go_duration(GCInterval)]);
             error ->
                 ArgString3
-            end,
+        end,
+
+    ArgString5 =
+        case get_config_key(checkpoint_interval, Config) of
+            {ok, CheckPointIntervalSpec} ->
+                {ok, CheckPointInterval} = parse_timeout_spec(CheckPointIntervalSpec),
+                ArgString4 ++ io_lib:format(" -checkpointInterval ~s", [to_go_duration(CheckPointInterval)]);
+            error ->
+                ArgString4
+        end,
+
+    ArgString6 =
+        case get_config_key(coord_recovery_min_wait, Config) of
+            {ok, CoordRecoveryMinWaitSpec} ->
+                {ok, CoordRecoveryMinWait} = parse_timeout_spec(CoordRecoveryMinWaitSpec),
+                ArgString5 ++ io_lib:format(" -coordRecoveryMinWait ~s", [to_go_duration(CoordRecoveryMinWait)]);
+            error ->
+                ArgString5
+        end,
+
+    ArgString7 =
+        case get_config_key(txn_ttl, Config) of
+            {ok, TxnTTLSpec} ->
+                {ok, TxnTTL} = parse_timeout_spec(TxnTTLSpec),
+                ArgString6 ++ io_lib:format(" -txnTTL ~s", [to_go_duration(TxnTTL)]);
+            error ->
+                ArgString6
+        end,
 
     {ok, Tag} = get_config_key(ext_tag, Config),
     Cmd = io_lib:format(
         "screen -dmSL ~s ./sources/~s/~s ~s",
-        [?DEFAULT_BIN_NAME, Tag, ?DEFAULT_BIN_NAME, ArgString4]
+        [?DEFAULT_BIN_NAME, Tag, ?DEFAULT_BIN_NAME, ArgString7]
     ),
 
     os_cmd(Cmd),
@@ -399,5 +426,20 @@ check_command(Opts = #{command := Command}) ->
     end.
 
 nonl(S) -> string:trim(S, trailing, "$\n").
+
+parse_timeout_spec(Time) when is_integer(Time) ->
+    {ok, Time};
+
+parse_timeout_spec({milliseconds, Time}) ->
+    {ok, Time};
+
+parse_timeout_spec({minutes, Time}) ->
+    {ok, timer:minutes(Time)};
+
+parse_timeout_spec({seconds, Time}) ->
+    {ok, timer:seconds(Time)};
+
+parse_timeout_spec(_) ->
+    error.
 
 to_go_duration(TimeMs) -> io_lib:format("~bms", [TimeMs]).
