@@ -14,4 +14,4 @@
 {writeonly_ops, '_'}.
 {retry_aborts, '_'}.
 
-{commit_timeout, {seconds, 10}}.
+{commit_timeout, {minutes, 5}}.
