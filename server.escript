@@ -177,37 +177,32 @@ start_ext(Replica, Config) ->
                 ArgString3
         end,
 
-    ArgString5 =
-        case get_config_key(checkpoint_interval, Config) of
-            {ok, CheckPointIntervalSpec} ->
-                {ok, CheckPointInterval} = parse_timeout_spec(CheckPointIntervalSpec),
-                ArgString4 ++ io_lib:format(" -checkpointInterval ~s", [to_go_duration(CheckPointInterval)]);
-            error ->
-                ArgString4
-        end,
+    OptionalTimeoutSpecs = [
+        {checkpoint_interval, "-checkpointInterval"},
+        {coord_recovery_min_wait, "-coordRecoveryMinWait"},
+        {txn_ttl, "-txnTTL"},
+        {coord_check_interval, "-coordCheckInterval"}
+    ],
 
-    ArgString6 =
-        case get_config_key(coord_recovery_min_wait, Config) of
-            {ok, CoordRecoveryMinWaitSpec} ->
-                {ok, CoordRecoveryMinWait} = parse_timeout_spec(CoordRecoveryMinWaitSpec),
-                ArgString5 ++ io_lib:format(" -coordRecoveryMinWait ~s", [to_go_duration(CoordRecoveryMinWait)]);
-            error ->
-                ArgString5
-        end,
-
-    ArgString7 =
-        case get_config_key(txn_ttl, Config) of
-            {ok, TxnTTLSpec} ->
-                {ok, TxnTTL} = parse_timeout_spec(TxnTTLSpec),
-                ArgString6 ++ io_lib:format(" -txnTTL ~s", [to_go_duration(TxnTTL)]);
-            error ->
-                ArgString6
-        end,
+    ArgStringWithTimeouts =
+        lists:foldl(
+            fun({ConfigKey, ServerArg}, Acc) ->
+                case get_config_key(ConfigKey, Config) of
+                    {ok, TimeoutSpec} ->
+                        {ok, Timeout} = parse_timeout_spec(TimeoutSpec),
+                        io_lib:format("~s ~s ~s", [Acc, ServerArg, to_go_duration(Timeout)]);
+                    error ->
+                        Acc
+                end
+            end,
+            ArgString4,
+            OptionalTimeoutSpecs
+        ),
 
     {ok, Tag} = get_config_key(ext_tag, Config),
     Cmd = io_lib:format(
         "screen -dmSL ~s ./sources/~s/~s ~s",
-        [?DEFAULT_BIN_NAME, Tag, ?DEFAULT_BIN_NAME, ArgString7]
+        [?DEFAULT_BIN_NAME, Tag, ?DEFAULT_BIN_NAME, ArgStringWithTimeouts]
     ),
 
     os_cmd(Cmd),
