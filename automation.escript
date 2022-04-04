@@ -242,7 +242,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     update_retry -> VerifyOp(Op, [writeonly_ops]);
                     update_release_retry -> VerifyOp(Op, [writeonly_ops]);
                     update_track_wait -> VerifyOp(Op, [writeonly_ops]);
-                    update_measure -> VerifyOp(Op, [writeonly_ops]), VerifyOpMetrics(Op, [waitqueue_size]);
+                    update_measure -> VerifyOp(Op, [writeonly_ops]), VerifyOpMetrics(Op, [waitqueue_size, uncontended_keys_hit]);
                     mixed when ClientVariant =:= go_runner -> VerifyOp(Op, [readonly_ops, writeonly_ops]);
                     mixed when ClientVariant =:= lasp_bench_runner -> VerifyOp(Op, [mixed_read_write]);
                     no_tx_read -> VerifyOp(Op, [readonly_ops]);
