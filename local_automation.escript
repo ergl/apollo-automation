@@ -848,6 +848,9 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                             Acc,
                             MetricList
                         );
+                    {op_timeout, TimeoutSpec} ->
+                        {ok, Millis} = parse_timeout_spec(TimeoutSpec),
+                        io_lib:format("~s -opTimeout ~s", [Acc, to_go_duration(Millis)]);
                     {commit_timeout, TimeoutSpec} ->
                         {ok, Millis} = parse_timeout_spec(TimeoutSpec),
                         io_lib:format("~s -commitTimeout ~s", [Acc, to_go_duration(Millis)]);
@@ -1074,6 +1077,9 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                             Acc,
                             MetricList
                         );
+                    {op_timeout, TimeoutSpec} ->
+                        {ok, Millis} = parse_timeout_spec(TimeoutSpec),
+                        io_lib:format("~s -opTimeout ~s", [Acc, to_go_duration(Millis)]);
                     {commit_timeout, TimeoutSpec} ->
                         {ok, Millis} = parse_timeout_spec(TimeoutSpec),
                         io_lib:format("~s -commitTimeout ~s", [Acc, to_go_duration(Millis)]);
