@@ -154,30 +154,15 @@ start_ext(Replica, Config) ->
         end,
 
     ArgString2 =
-        case get_config_key(inter_dc_pool_size, Config) of
+        case get_config_key(tcp_pool_size, Config) of
             {ok, DCSize} ->
-                ArgString1 ++ io_lib:format(" -dc_pool ~b", [DCSize]);
+                ArgString1 ++ io_lib:format(" -poolSize ~b", [DCSize]);
             error ->
                 ArgString1
         end,
 
-    ArgString3 =
-        case get_config_key(local_dc_pool_size, Config) of
-            {ok, LocalSize} ->
-                ArgString2 ++ io_lib:format(" -local_pool ~b", [LocalSize]);
-            error ->
-                ArgString2
-        end,
-
-    ArgString4 =
-        case get_config_key(commit_gc_interval_ms, Config) of
-            {ok, GCInterval} ->
-                ArgString3 ++ io_lib:format(" -committedGCInterval ~s", [to_go_duration(GCInterval)]);
-            error ->
-                ArgString3
-        end,
-
     OptionalTimeoutSpecs = [
+        {commit_gc_interval, "-committedGCInterval"},
         {checkpoint_interval, "-checkpointInterval"},
         {coord_recovery_min_wait, "-coordRecoveryMinWait"},
         {txn_ttl, "-txnTTL"},
@@ -195,7 +180,7 @@ start_ext(Replica, Config) ->
                         Acc
                 end
             end,
-            ArgString4,
+            ArgString2,
             OptionalTimeoutSpecs
         ),
 

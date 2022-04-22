@@ -1641,12 +1641,12 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
             proplists:get_value(operations, RunTerms, [])
         ),
     Path = io_lib:format(
-        "partitions_~b+cl_~b+cm_~b+localpool_~b+~s+t_~b_~s",
+        "partitions_~b+cl_~b+cm_~b+poolSize_~b+~s+t_~b_~s",
         [
             NPartitions,
             maps:size(ClusterMap),
             NClients,
-            proplists:get_value(local_dc_pool_size, ConfigTerms, "NA"),
+            proplists:get_value(tcp_pool_size, ConfigTerms, "NA"),
             case OpString of "" -> "op_NA"; _ -> OpString end,
             proplists:get_value(concurrent, RunTerms, "NA"),
             calendar:system_time_to_rfc3339(erlang:system_time(millisecond), [{unit, millisecond}])
