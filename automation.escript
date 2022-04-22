@@ -82,7 +82,7 @@ usage() ->
     Name = filename:basename(escript:script_name()),
     ok = io:fwrite(
         standard_error,
-        "Usage: ~s [-ds] --latencies <experiment-definition> | --generate <experiment-definition> | --experiment <experiment-definition>~n",
+        "Usage: ~s [-ds] --nodes <experiment-definition> --latencies <experiment-definition> | --generate <experiment-definition> | --experiment <experiment-definition>~n",
         [Name]
     ).
 
@@ -105,12 +105,17 @@ main(Args) ->
 
         {ok, #{show_latencies := Definition}} ->
             {ok, DefinitionTerms} = file:consult(Definition),
-            Specs0 = materialize_experiments(?LOCAL_CONFIG_DIR, DefinitionTerms),
-            Specs1 = dedup_specs_for_latencies(Specs0),
+            Specs = materialize_experiments(?LOCAL_CONFIG_DIR, DefinitionTerms),
             io:format(
                 "experiment, partitions, quorum_size, at_partition, at_region, commit_latency, delivery_latency\n"
             ),
-            show_latencies(Specs1);
+            show_latencies(dedup_specs(Specs));
+
+        {ok, #{show_nodes := Definition}} ->
+            {ok, DefinitionTerms} = file:consult(Definition),
+            Specs = materialize_experiments(?LOCAL_CONFIG_DIR, DefinitionTerms),
+            Nodes = aggregate_nodes(dedup_specs(Specs)),
+            io:format("Total Nodes: ~b~n~s~n", [sets:size(Nodes), format_node_set(Nodes)]);
 
         {ok, Opts = #{experiment_definition := Definition}} ->
             {ok, DefinitionTerms} = file:consult(Definition),
@@ -1803,13 +1808,13 @@ get_config_key(Key, Config, Default) ->
         {Key, Value} -> Value
     end.
 
-dedup_specs_for_latencies(Specs) ->
-    dedup_specs_for_latencies(Specs, #{}, []).
+dedup_specs(Specs) ->
+    dedup_specs(Specs, #{}, []).
 
-dedup_specs_for_latencies([], _, Acc) ->
+dedup_specs([], _, Acc) ->
     lists:reverse(Acc);
 
-dedup_specs_for_latencies([Spec | Rest], Prev, Acc0) ->
+dedup_specs([Spec | Rest], Prev, Acc0) ->
     #{
         results_folder := ExperimentName,
         config_terms := ConfigTerms
@@ -1824,7 +1829,7 @@ dedup_specs_for_latencies([Spec | Rest], Prev, Acc0) ->
             true ->
                 Acc0
         end,
-    dedup_specs_for_latencies(Rest, Spec, Acc).
+    dedup_specs(Rest, Spec, Acc).
 
 show_latencies([]) ->
     ok;
@@ -2032,6 +2037,35 @@ shortest_latency(From, To, Digraph, Visited, Cost, Min) ->
         end,
         {0, undefined},
         digraph:out_edges(Digraph, From)
+    ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Show Nodes
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+aggregate_nodes(Specs) ->
+    aggregate_nodes(Specs, sets:new()).
+
+aggregate_nodes([], Acc) ->
+    Acc;
+
+aggregate_nodes([ #{config_terms := ConfigTerms} | Rest ], Acc) ->
+    {master_node, Master} = lists:keyfind(master_node, 1, ConfigTerms),
+    {clusters, ClusterMap} = lists:keyfind(clusters, 1, ConfigTerms),
+
+    Servers = sets:from_list(server_nodes(ClusterMap)),
+    Clients = sets:from_list(client_nodes(ClusterMap)),
+
+    aggregate_nodes(Rest, sets:union([sets:add_element(Master, Acc), Servers, Clients])).
+
+format_node_set(Set) ->
+    [Head | Tail] = lists:usort(sets:to_list(Set)),
+    lists:foldl(
+        fun(Elt, Acc) ->
+            io_lib:format("~s~n~s", [Acc, Elt])
+        end,
+        io_lib:format("~s", [Head]),
+        Tail
     ).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2262,6 +2296,8 @@ parse_args([[$- | Flag] | Args], Acc) ->
             parse_flag(Flag, Args, fun(Arg) -> Acc#{generate_definition => Arg} end);
         "-latencies" ->
             parse_flag(Flag, Args, fun(Arg) -> Acc#{show_latencies => Arg} end);
+        "-nodes" ->
+            parse_flag(Flag, Args, fun(Arg) -> Acc#{show_nodes => Arg} end);
         "-experiment" ->
             parse_flag(Flag, Args, fun(Arg) -> Acc#{experiment_definition => Arg} end);
         [$h] ->
@@ -2287,6 +2323,8 @@ required(Opts) ->
             {ok, Opts};
         #{show_latencies := _} ->
             {ok, Opts};
+        #{show_nodes := _} ->
+            {ok, Opts};
         _ ->
-            {error, "Missing required --latencies, --generate or --experiment flags"}
+            {error, "Missing required --nodes, --latencies, --generate or --experiment flags"}
     end.
