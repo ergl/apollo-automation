@@ -308,6 +308,8 @@ build_failure_spec(Experiment, ConfigTerms, Failures) ->
     %% First, verify that all clusters specified in Failures do exist
     lists:foreach(
         fun
+            ({C, _}) when is_map_key(C, ClusterMap) ->
+                ok;
             (C) when is_map_key(C, ClusterMap) ->
                 ok;
             (Unknown) ->
@@ -322,7 +324,7 @@ build_failure_spec(Experiment, ConfigTerms, Failures) ->
     ),
 
     maps:fold(
-        fun(Cluster, TimeSpec, Acc) ->
+        fun(Group, TimeSpec, Acc) ->
             case parse_timeout_spec(TimeSpec) of
                 error ->
                     io:fwrite(
@@ -333,7 +335,15 @@ build_failure_spec(Experiment, ConfigTerms, Failures) ->
                     throw(error);
 
                 {ok, FailureTime} ->
-                    Servers = maps:get(servers, maps:get(Cluster, ClusterMap)),
+                    Servers =
+                        case Group of
+                            {Cluster, Partition} ->
+                                AllClusterServers = maps:get(servers, maps:get(Cluster, ClusterMap)),
+                                [lists:nth(Partition + 1, lists:usort(AllClusterServers))];
+
+                            Cluster ->
+                                maps:get(servers, maps:get(Cluster, ClusterMap))
+                        end,
                     lists:foldl(
                         fun(Server, InnerAcc) ->
                             InnerAcc#{Server => FailureTime}
