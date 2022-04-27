@@ -16,10 +16,10 @@
 -define(DEFAULT_WORKER_THREADS, 12).
 -define(COMMANDS, [
     {download, {true, "Github Token"}},
-    {start, {true, "Replica Name"}},
+    {start, false},
     {profile, false},
     {stop, false},
-    {restart, {true, "Replica Name"}}
+    {restart, false}
 ]).
 
 usage() ->
@@ -42,7 +42,7 @@ usage() ->
     ),
     ok = io:fwrite(
         standard_error,
-        "Usage: [-dv] ~s -f <config-file> -c ~s~n",
+        "Usage: [-dv] ~s [-r replica] [-p partition] -f <config-file> -c ~s~n",
         [Name, Commands ++ " >"]
     ).
 
@@ -60,6 +60,10 @@ main(Args) ->
             case Parsed of
                 #{command := Command, command_arg := Arg} ->
                     execute_command({Command, Arg}, Config);
+                #{command := start} ->
+                    execute_command({start, maps:get(replica, Parsed), maps:get(partition, Parsed)}, Config);
+                #{command := restart} ->
+                    execute_command({restart, maps:get(replica, Parsed), maps:get(partition, Parsed)}, Config);
                 #{command := Command} ->
                     execute_command(Command, Config)
             end
@@ -82,8 +86,8 @@ execute_command({download, Token}, Config) ->
     os_cmd(Cmd3),
     ok;
 
-execute_command({start, Replica}, Config) ->
-    ok = start_ext(Replica, Config);
+execute_command({start, Replica, Partition}, Config) ->
+    ok = start_ext(Replica, Partition, Config);
 
 execute_command(profile, Config) ->
     ok = dump_profile(Config);
@@ -91,16 +95,16 @@ execute_command(profile, Config) ->
 execute_command(stop, Config) ->
     ok = stop_ext(Config);
 
-execute_command({restart, Replica}, Config) ->
+execute_command({restart, Replica, Partition}, Config) ->
     ok = stop_ext(Config),
-    ok = start_ext(Replica, Config),
+    ok = start_ext(Replica, Partition, Config),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% internal
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_ext(Replica, Config) ->
+start_ext(Replica, Partition, Config) ->
     _ = os_cmd("sudo sysctl net.ipv4.ip_local_port_range=\"15000 61000\""),
 
     {ok, MASTER_NODE} = get_config_key(master_node, Config),
@@ -129,9 +133,10 @@ start_ext(Replica, Config) ->
     WORKER_THREADS = get_config_key(worker_threads, Config, ?DEFAULT_WORKER_THREADS),
 
     ArgString0 = io_lib:format(
-        "-replica ~s -ip ~s -port ~b -replPort ~b -mIp ~s -mPort ~b -pingMs ~b -f ~b -log ~s -log_level ~b -shards ~b",
+        "-replica ~s -partition ~b -ip ~s -port ~b -replPort ~b -mIp ~s -mPort ~b -pingMs ~b -f ~b -log ~s -log_level ~b -shards ~b",
         [
             Replica,
+            Partition,
             IP,
             PORT,
             INTER_DC_PORT,
@@ -349,6 +354,10 @@ parse_args([[$- | Flag] | Args], Acc) ->
     case Flag of
         [$f] ->
             parse_flag(Flag, Args, fun(Arg) -> Acc#{config => Arg} end);
+        [$r] ->
+            parse_flag(Flag, Args, fun(Arg) -> Acc#{replica => Arg} end);
+        [$p] ->
+            parse_flag(Flag, Args, fun(Arg) -> Acc#{partition => list_to_integer(Arg)} end);
         [$c] ->
             parse_flag(Flag, Args, fun(Arg) -> parse_command(Arg, Acc) end);
         [$v] ->

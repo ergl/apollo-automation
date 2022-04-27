@@ -586,9 +586,17 @@ start_server(ConfigFile, ClusterMap) ->
         fun
             (_, _, error) ->
                 error;
-            (ClusterName, #{servers := ServerNodes}, ok) ->
+            (ClusterName, _, ok) ->
+                {SortedNames, Index} = server_nodes_with_partitions(ClusterName, ClusterMap),
                 case
-                    do_in_nodes_par(server_command(ConfigFile, "start", atom_to_list(ClusterName)), lists:usort(ServerNodes), ?TIMEOUT)
+                    do_in_nodes_par_func(
+                        fun(NodeStr) ->
+                            Partition = maps:get(list_to_atom(NodeStr), Index),
+                            server_command(ConfigFile, "start", atom_to_list(ClusterName), Partition)
+                        end,
+                        SortedNames,
+                        ?TIMEOUT
+                    )
                 of
                     {error, _} ->
                         error;
@@ -1364,6 +1372,14 @@ server_command(ConfigFile, Command, Arg) ->
         Arg
     ]).
 
+server_command(ConfigFile, Command, Replica, Partition) ->
+    io_lib:format("./server.escript -r ~s -p ~b -v -f /home/borja.deregil/~s -c ~s", [
+        Replica,
+        Partition,
+        ConfigFile,
+        Command
+    ]).
+
 client_command(NodeStr, GitTag, Command, Arg1) ->
     HomePath = home_path_for_node(NodeStr),
     io_lib:format(
@@ -1418,6 +1434,14 @@ all_nodes(Map) ->
 
 server_nodes(Map) ->
     lists:usort(lists:flatten([N || #{servers := N} <- maps:values(Map)])).
+
+server_nodes_with_partitions(Replica, Map) ->
+    #{servers := N} = maps:get(Replica, Map),
+    Sorted = lists:usort(N),
+    {
+        Sorted,
+        maps:from_list(lists:zip(Sorted, lists:seq(0, length(Sorted)-1)))
+    }.
 
 client_nodes(Map) ->
     lists:usort(lists:flatten([N || #{clients := N} <- maps:values(Map)])).
