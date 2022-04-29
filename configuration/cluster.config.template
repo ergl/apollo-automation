@@ -17,4 +17,4 @@
 {checkpoint_interval, {milliseconds, 500}}.
 {coord_recovery_min_wait, {milliseconds, 500}}.
 {txn_ttl, {minutes, 5}}.
-{coord_check_interval, {milliseconds, 500}}.
+{prepare_retransmit_interval, {milliseconds, 500}}.

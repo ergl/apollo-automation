@@ -171,7 +171,7 @@ start_ext(Replica, Partition, Config) ->
         {checkpoint_interval, "-checkpointInterval"},
         {coord_recovery_min_wait, "-coordRecoveryMinWait"},
         {txn_ttl, "-txnTTL"},
-        {coord_check_interval, "-coordCheckInterval"}
+        {prepare_retransmit_interval, "-prepareRetransmitInterval"}
     ],
 
     ArgStringWithTimeouts =
