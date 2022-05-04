@@ -15,6 +15,7 @@
 {worker_threads, 12}.
 {cpu_profile, '_'}.
 {checkpoint_interval, {milliseconds, 500}}.
-{coord_recovery_min_wait, {milliseconds, 500}}.
+{recovery_min_wait, {milliseconds, 500}}.
+{recovery_backoff, {seconds, 1}}.
 {txn_ttl, {minutes, 5}}.
 {prepare_retransmit_interval, {milliseconds, 500}}.

@@ -169,7 +169,8 @@ start_ext(Replica, Partition, Config) ->
     OptionalTimeoutSpecs = [
         {commit_gc_interval, "-committedGCInterval"},
         {checkpoint_interval, "-checkpointInterval"},
-        {coord_recovery_min_wait, "-coordRecoveryMinWait"},
+        {recovery_min_wait, "-recoveryMinWait"},
+        {recovery_backoff, "-recoveryBackoff"},
         {txn_ttl, "-txnTTL"},
         {prepare_retransmit_interval, "-prepareRetransmitInterval"}
     ],
