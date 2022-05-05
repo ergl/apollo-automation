@@ -11,7 +11,7 @@
 {ext_dc_port, 8989}.
 {ping_interval_ms, 100}.
 {log_level, 2}.
-{commit_gc_interval, {milliseconds, 5000}}.
+{commit_gc_checkpoint_threshold, 10}.
 {worker_threads, 12}.
 {cpu_profile, '_'}.
 {checkpoint_interval, {milliseconds, 500}}.

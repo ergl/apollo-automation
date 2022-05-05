@@ -166,8 +166,15 @@ start_ext(Replica, Partition, Config) ->
                 ArgString1
         end,
 
+    ArgString3 =
+        case get_config_key(commit_gc_checkpoint_threshold, Config) of
+            {ok, GCThreshold} ->
+                ArgString2 ++ io_lib:format(" -committedGCCheckpointThreshold ~b", [GCThreshold]);
+            error ->
+                ArgString2
+        end,
+
     OptionalTimeoutSpecs = [
-        {commit_gc_interval, "-committedGCInterval"},
         {checkpoint_interval, "-checkpointInterval"},
         {recovery_min_wait, "-recoveryMinWait"},
         {recovery_backoff, "-recoveryBackoff"},
@@ -186,7 +193,7 @@ start_ext(Replica, Partition, Config) ->
                         Acc
                 end
             end,
-            ArgString2,
+            ArgString3,
             OptionalTimeoutSpecs
         ),
 
