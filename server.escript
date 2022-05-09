@@ -199,7 +199,7 @@ start_ext(Replica, Partition, Config) ->
 
     {ok, Tag} = get_config_key(ext_tag, Config),
     Cmd = io_lib:format(
-        "screen -dmSL ~s ./sources/~s/~s ~s",
+        "screen -dmSL ~s GODEBUG='gctrace=1' ./sources/~s/~s ~s",
         [?DEFAULT_BIN_NAME, Tag, ?DEFAULT_BIN_NAME, ArgStringWithTimeouts]
     ),
 
