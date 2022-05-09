@@ -174,6 +174,14 @@ start_ext(Replica, Partition, Config) ->
                 ArgString2
         end,
 
+    ArgString4 =
+        case get_config_key(magic_crash_key, Config) of
+            {ok, MagicKey} ->
+                ArgString3 ++ io_lib:format(" -magicCrashKey ~b", [MagicKey]);
+            error ->
+                ArgString3
+        end,
+
     OptionalTimeoutSpecs = [
         {checkpoint_interval, "-checkpointInterval"},
         {recovery_min_wait, "-recoveryMinWait"},
@@ -193,7 +201,7 @@ start_ext(Replica, Partition, Config) ->
                         Acc
                 end
             end,
-            ArgString3,
+            ArgString4,
             OptionalTimeoutSpecs
         ),
 
