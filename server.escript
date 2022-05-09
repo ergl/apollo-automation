@@ -199,11 +199,17 @@ start_ext(Replica, Partition, Config) ->
 
     {ok, Tag} = get_config_key(ext_tag, Config),
     Cmd = io_lib:format(
-        "screen -dmSL ~s GODEBUG='gctrace=1' ./sources/~s/~s ~s",
+        "screen -dmSL ~s ./sources/~s/~s ~s",
         [?DEFAULT_BIN_NAME, Tag, ?DEFAULT_BIN_NAME, ArgStringWithTimeouts]
     ),
 
     os_cmd(Cmd),
+
+    Cmd1 = io_lib:format("screen -ls | grep -o -P \"\\d+.~s\"", [?DEFAULT_BIN_NAME]),
+    ScreenName = nonl(os_cmd_ignore_verbose(Cmd1)),
+
+    Cmd2 = io_lib:format("screen -S ~s setenv GODEBUG 'gctrace=1'", [ScreenName]),
+    os_cmd(Cmd2),
 
     ok.
 
