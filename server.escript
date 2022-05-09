@@ -208,7 +208,7 @@ start_ext(Replica, Partition, Config) ->
     Cmd1 = io_lib:format("screen -ls | grep -o -P \"\\d+.~s\"", [?DEFAULT_BIN_NAME]),
     ScreenName = nonl(os_cmd_ignore_verbose(Cmd1)),
 
-    Cmd2 = io_lib:format("screen -S ~s setenv GODEBUG 'gctrace=1'", [ScreenName]),
+    Cmd2 = io_lib:format("screen -S ~s -X setenv GODEBUG 'gctrace=1'", [ScreenName]),
     os_cmd(Cmd2),
 
     ok.
