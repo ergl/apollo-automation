@@ -4,6 +4,7 @@ set -eo pipefail
 
 RUNNER_BIN_NAME=runner_linux_amd64
 LOAD_BIN_NAME=load_linux_amd64
+CRASHER_BIN_NAME=crasher_linux_amd64
 
 do_download() {
     local home_directory="${1}"
@@ -22,6 +23,10 @@ do_download() {
     GITHUB_API_TOKEN=${token} ./fetch_gh_release.sh -t "${release_tag}" -f "${LOAD_BIN_NAME}"
     chmod u+x "${LOAD_BIN_NAME}"
     mv "${LOAD_BIN_NAME}" "${folder}/${release_tag}"
+
+    GITHUB_API_TOKEN=${token} ./fetch_gh_release.sh -t "${release_tag}" -f "${CRASHER_BIN_NAME}"
+    chmod u+x "${CRASHER_BIN_NAME}"
+    mv "${CRASHER_BIN_NAME}" "${folder}/${release_tag}"
 
     popd
 }
@@ -59,7 +64,19 @@ do_compress() {
 }
 
 usage() {
-    echo "bench.sh [-h] [-H <home>] [-T tag] download <token> | load_ext <master-node> <master-port> <replica> <keys> <value_bytes> | run <argument-string> | compress <path>"
+    local _usage="bench.sh [-h] [-H <home>] [-T tag]
+    download <token>
+    load_ext <master-node> <master-port> <replica> <keys> <value_bytes>
+    run <argument-string>
+    crasher <argument-string>
+    compress <path>
+
+Options:
+    -h          Show this help
+    -H <home>   Set \$HOME as <home> as the default home directory when running this script
+    -T <tag>    Use the given release tag when downloading from GitHub
+"
+    echo -e "${_usage}"
 }
 
 run () {
@@ -134,6 +151,14 @@ run () {
             shift
             echo -e "Running benchmark\n"
             "${home_directory}"/sources/"${tag}"/"${RUNNER_BIN_NAME}" "${@}"
+            exit $?
+            ;;
+
+        "crasher")
+            # Remove "crasher"
+            shift
+            echo -e "Running crasher\n"
+            "${home_directory}"/sources/"${tag}"/"${CRASHER_BIN_NAME}" "${@}"
             exit $?
             ;;
 

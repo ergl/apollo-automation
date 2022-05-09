@@ -292,13 +292,23 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
         Failures = maps:get(failures_after, Experiment, #{}),
         FailureSpec = build_failure_spec(Experiment, maps:from_list(ConfigTerms), Failures),
 
+        Crasher = maps:get(crasher_after, Experiment, #{}),
+        CrasherSpec = build_crasher_spec(
+            Experiment,
+            maps:from_list(ConfigTerms),
+            maps:from_list(ExperimentTerms),
+            LoadSpec,
+            Crasher
+        ),
+
         [
             #{
                 config_terms => ConfigTerms,
                 results_folder => maps:get(results_folder, Experiment),
                 run_terms => ExperimentTerms,
                 load_spec => LoadSpec,
-                failure_spec => FailureSpec
+                failure_spec => FailureSpec,
+                crasher_spec => CrasherSpec
             }
         ].
 
@@ -356,6 +366,91 @@ build_failure_spec(Experiment, ConfigTerms, Failures) ->
         #{},
         Failures
     ).
+
+build_crasher_spec(_, _, _, _, M) when map_size(M) =:= 0 -> #{};
+build_crasher_spec(Experiment, ConfigTerms, RunTerms, LoadSpec, #{
+    replica := CrasherReplica,
+    hot_key := HotKey,
+    at := TimeSpec
+}) ->
+
+    %% First, verify that any cluster specified in Crasher does exist
+    #{clusters := ClusterMap} = ConfigTerms,
+    if
+        not is_map_key(CrasherReplica, ClusterMap) ->
+            io:fwrite(
+                standard_error,
+                "[~s] Crasher spec contains unrecognized replica: ~p~n",
+                [maps:get(results_folder, Experiment), CrasherReplica]
+            ),
+            throw(error);
+        true ->
+            ok
+    end,
+
+    %% Verify that we have at least two partitions, as required by crasher
+    maps:foreach(
+        fun(Cluster, #{servers := Servers}) ->
+            if
+                length(Servers) < 2 ->
+                    io:fwrite(
+                        standard_error,
+                        "[~s] Crasher spec needs at least two partitions, but replica ~p has ~b~n",
+                        [maps:get(results_folder, Experiment), Cluster, length(Servers)]
+                    ),
+                    throw(error);
+
+                true ->
+                    ok
+            end
+        end,
+        ClusterMap
+    ),
+
+    CrashAtTime =
+        case parse_timeout_spec(TimeSpec) of
+            error ->
+                io:fwrite(
+                    standard_error,
+                    "[~s] Crasher spec contains unrecognized time spec: ~p~n",
+                    [maps:get(results_folder, Experiment), TimeSpec]
+                ),
+                throw(error);
+
+            {ok, FailureTime} ->
+                FailureTime
+        end,
+
+    CrashKey = maps:get(magic_crash_key, ConfigTerms),
+    if
+        CrashKey =:= HotKey ->
+            io:fwrite(
+                standard_error,
+                "[~s] Crasher spec: hot key and crash key are the same~n",
+                [maps:get(results_folder, Experiment)]
+            ),
+            throw(error);
+
+        true ->
+            ok
+    end,
+
+    #{
+        replica => CrasherReplica,
+
+        master_node => maps:get(master_node, ConfigTerms),
+        master_port => maps:get(master_port, ConfigTerms),
+
+        magic_crash_key => CrashKey,
+        hot_key => HotKey,
+
+        op_timeout => maps:get(op_timeout, RunTerms),
+        commit_timeout => maps:get(commit_timeout, RunTerms),
+
+        value_bytes => maps:get(val_size, LoadSpec),
+
+        crash_at => CrashAtTime
+    }.
 
 parse_timeout_spec(Time) when is_integer(Time) ->
     {ok, Time};
@@ -663,7 +758,8 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
         results_folder := Results,
         run_terms := RunTerms,
         load_spec := LoadSpec,
-        failure_spec := FailureSpec
+        failure_spec := FailureSpec,
+        crasher_spec := CrasherSpec
     } = Spec,
 
     _ = ets:new(?CONF, [set, named_table]),
@@ -705,7 +801,7 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
 
                     %% Actual experiment: load then bench
                     ok = load_ext(Master, ClusterMap, LoadSpec),
-                    ok = bench_ext(Master, RunTerms, ClusterMap, {ConfigFile, FailureSpec}),
+                    ok = bench_ext(Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, CrasherSpec),
 
                     %% Give system some time (1 sec) to stabilise
                     ok = timer:sleep(1000),
@@ -1326,10 +1422,10 @@ load_ext(lasp_bench_runner, Master, ClusterMap, LoadSpec) ->
             ok
     end.
 
-bench_ext(Master, RunTerms, ClusterMap, FailureSpec) ->
-    bench_ext(ets:lookup_element(?CONF, client_variant, 2), Master, RunTerms, ClusterMap, FailureSpec).
+bench_ext(Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, CrasherSpec) ->
+    bench_ext(ets:lookup_element(?CONF, client_variant, 2), Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, CrasherSpec).
 
-bench_ext(go_runner, Master, RunTerms, ClusterMap, {ConfigFile, FailureSpec}) ->
+bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, CrasherSpec) ->
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
 
     NodesWithReplicas = [
@@ -1456,6 +1552,19 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, {ConfigFile, FailureSpec}) ->
         FailureSpec
     ),
 
+    case CrasherSpec of
+        #{crash_at := CrashAfter} ->
+            [{_Replica, HeadNode} | _]=  NodesWithReplicas,
+            erlang:spawn(
+                fun() ->
+                    ok = timer:sleep(CrashAfter),
+                    spawn_crasher(GitTag, HeadNode, CrasherSpec)
+                end
+            );
+        _ ->
+            ok
+    end,
+
     %% Wait at least the same time that the benchmark is supposed to run
     BenchTimeout = timer:minutes(RunsForMinutes) + ?TIMEOUT,
     pmap(
@@ -1490,7 +1599,7 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, {ConfigFile, FailureSpec}) ->
             ok
     end;
 
-bench_ext(lasp_bench_runner, Master, RunTerms, ClusterMap, {ConfigFile, FailureSpec}) ->
+bench_ext(lasp_bench_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, _) ->
     ok = write_terms(filename:join(?CONFIG_DIR, "run.config"), RunTerms),
     Res = pmap(fun(Node) -> transfer_config(Node, "run.config") end, client_nodes(ClusterMap), ?TIMEOUT),
     case Res of
@@ -1581,6 +1690,39 @@ bench_ext(lasp_bench_runner, Master, RunTerms, ClusterMap, {ConfigFile, FailureS
                     ok
             end
     end.
+
+spawn_crasher(GitTag, Node, CrasherSpec) ->
+    #{
+        replica := CrasherReplica,
+
+        master_node := MasterNode,
+        master_port := MasterPort,
+
+        magic_crash_key := CrashKey,
+        hot_key := HotKey,
+
+        op_timeout := OpTimeout,
+        commit_timeout := CommitTimeout,
+
+        value_bytes := ValueBytes
+    } = CrasherSpec,
+
+    ArgString = io_lib:format(
+        "-replica ~s -master_ip ~s -master_port ~b -crashKey ~b -hotKey ~b -opTimeout ~s -commitTimeout ~s -value_bytes ~b",
+        [CrasherReplica, atom_to_list(MasterNode), MasterPort, CrashKey, HotKey, to_go_duration(OpTimeout), to_go_duration(CommitTimeout), ValueBytes]
+    ),
+
+    Command = client_command(
+        atom_to_list(Node),
+        GitTag,
+        "crasher",
+        ArgString
+    ),
+
+    Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, atom_to_list(Node)]),
+    safe_cmd(Cmd),
+
+    ok.
 
 cleanup_master(Master) ->
     io:format("~p~n", [do_in_nodes_seq("rm -rf /home/borja.deregil/sources; mkdir -p /home/borja.deregil/sources", [Master])]),
