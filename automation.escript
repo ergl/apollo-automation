@@ -1553,7 +1553,8 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
     ),
 
     case CrasherSpec of
-        #{crash_at := CrashAfter} ->
+        #{crash_at := CrashAfterSpec} ->
+            {ok, CrashAfter} = parse_timeout_spec(CrashAfterSpec),
             [{_Replica, HeadNode} | _]=  NodesWithReplicas,
             erlang:spawn(
                 fun() ->
