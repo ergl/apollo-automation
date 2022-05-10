@@ -264,6 +264,8 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
             Ops
         ),
 
+        ok = verify_partition_ranges(maps:get(results_folder, Experiment), RunWith),
+
         RunWith1 =
             case ClientVariant of
                 go_runner ->
@@ -311,6 +313,45 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                 crasher_spec => CrasherSpec
             }
         ].
+
+%% TODO(borja): Verify that range is not larger than the number of partitions
+verify_partition_ranges(ExperimentName, RunWith) ->
+    UpperRange = maps:get(upper_partition_range, RunWith, -1),
+    ok = verify_single_partition_range(ExperimentName, UpperRange),
+
+    LowerRange = maps:get(lower_partition_range, RunWith, -1),
+    ok = verify_single_partition_range(ExperimentName, LowerRange),
+
+    if
+        UpperRange < LowerRange ->
+            io:fwrite(
+                standard_error,
+                "[~s] Upper partition range ~b is lower than lower range ~b~n",
+                [ExperimentName, UpperRange, LowerRange]
+            ),
+            throw(error);
+        true ->
+            ok
+    end.
+
+verify_single_partition_range(ExperimentName, Range) when not is_integer(Range) ->
+    io:fwrite(
+        standard_error,
+        "[~s] Upper partition range ~p is not a number~n",
+        [ExperimentName, Range]
+    ),
+    throw(error);
+
+verify_single_partition_range(ExperimentName, Range) when is_integer(Range) andalso Range < -1 ->
+    io:fwrite(
+        standard_error,
+        "[~s] Upper partition range ~b is invalid~n",
+        [ExperimentName, Range]
+    ),
+    throw(error);
+
+verify_single_partition_range(_, _) ->
+    ok.
 
 build_failure_spec(Experiment, ConfigTerms, Failures) ->
     #{clusters := ClusterMap} = ConfigTerms,
@@ -1486,6 +1527,10 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
                     {commit_timeout, TimeoutSpec} ->
                         {ok, Millis} = parse_timeout_spec(TimeoutSpec),
                         io_lib:format("~s -commitTimeout ~s", [Acc, to_go_duration(Millis)]);
+                    {upper_partition_range, UpperPartitionRange} when is_integer(UpperPartitionRange) ->
+                        io_lib:format("~s -upperPartitionRange ~b", [Acc, UpperPartitionRange]);
+                    {lower_partition_range, LowerPartitionRange} when is_integer(LowerPartitionRange) ->
+                        io_lib:format("~s -lowerPartitionRange ~b", [Acc, LowerPartitionRange]);
                     _ ->
                         Acc
                 end

@@ -16,3 +16,6 @@
 
 {op_timeout, {seconds, 5}}.
 {commit_timeout, {minutes, 5}}.
+
+{upper_partition_range, -1}.
+{lower_partition_range, -1}.
