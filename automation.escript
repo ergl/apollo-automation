@@ -1553,8 +1553,7 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
     ),
 
     case CrasherSpec of
-        #{crash_at := CrashAfterSpec} ->
-            {ok, CrashAfter} = parse_timeout_spec(CrashAfterSpec),
+        #{crash_at := CrashAfter} ->
             [{_Replica, HeadNode} | _]=  NodesWithReplicas,
             erlang:spawn(
                 fun() ->
@@ -1702,11 +1701,14 @@ spawn_crasher(GitTag, Node, CrasherSpec) ->
         magic_crash_key := CrashKey,
         hot_key := HotKey,
 
-        op_timeout := OpTimeout,
-        commit_timeout := CommitTimeout,
+        op_timeout := OpTimeoutSpec,
+        commit_timeout := CommitTimeoutSpec,
 
         value_bytes := ValueBytes
     } = CrasherSpec,
+
+    {ok, OpTimeout} = parse_timeout_spec(OpTimeoutSpec),
+    {ok, CommitTimeout} = parse_timeout_spec(CommitTimeoutSpec),
 
     ArgString = io_lib:format(
         "-replica ~s -master_ip ~s -master_port ~b -crashKey ~b -hotKey ~b -opTimeout ~s -commitTimeout ~s -value_bytes ~b",
