@@ -1505,6 +1505,8 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
                         io_lib:format("~s -distribution split_uniform", [Acc]);
                     {key_distribution, {biased_key, Key, Bias}} when is_integer(Key) andalso is_integer(Bias) ->
                         io_lib:format("~s -distribution biased_key -distrArgs '-hotKey ~b -bias ~b'", [Acc, Key, Bias]);
+                    {key_distribution, {constant_key, Key}} when is_integer(Key) ->
+                        io_lib:format("~s -distribution constant_key -distrArgs '-key ~b'", [Acc, Key]);
                     {operations, OpList} ->
                         lists:foldl(
                             fun(Op, InnerAcc) ->
