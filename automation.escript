@@ -271,7 +271,21 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                 go_runner ->
                     RunWith;
                 lasp_bench_runner ->
-                    RunWith#{operations => [{OpName, 1} || OpName <- Ops]}
+                    RunWith0 =
+                        case RunWith of
+                            #{report_interval := {seconds, Secs}} ->
+                                RunWith#{report_interval => Secs};
+                            #{report_interval := Spec} ->
+                                io:fwrite(
+                                    standard_error,
+                                    "[~s] Bad report interval spec: ~p~n",
+                                    [maps:get(results_folder, Experiment), Spec]
+                                ),
+                                throw(error);
+                            _ ->
+                                RunWith
+                        end,
+                    RunWith0#{operations => [{OpName, 1} || OpName <- Ops]}
             end,
 
         % Fill all template values from experiment definition
@@ -293,6 +307,18 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
 
         Failures = maps:get(failures_after, Experiment, #{}),
         FailureSpec = build_failure_spec(Experiment, maps:from_list(ConfigTerms), Failures),
+
+        case ClientVariant of
+            lasp_bench_runner when is_map_key(crasher_after, Experiment) ->
+                io:fwrite(
+                    standard_error,
+                    "[~s] Lasp bench runner doesn't support crasher specification~n",
+                    [maps:get(results_folder, Experiment)]
+                ),
+                throw(error);
+            _ ->
+                ok
+        end,
 
         Crasher = maps:get(crasher_after, Experiment, #{}),
         CrasherSpec = build_crasher_spec(
@@ -1481,8 +1507,9 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
                 case Elt of
                     {duration, Minutes} ->
                         io_lib:format("~s -duration ~bm", [Acc, Minutes]);
-                    {report_interval, Seconds} ->
-                        io_lib:format("~s -reportInterval ~bs", [Acc, Seconds]);
+                    {report_interval, ReportTimeSpec} ->
+                        {ok, Millis} = parse_timeout_spec(ReportTimeSpec),
+                        io_lib:format("~s -reportInterval ~s", [Acc, to_go_duration(Millis)]);
                     {concurrent, Threads} ->
                         io_lib:format("~s -concurrent ~b", [Acc, Threads]);
                     {key_range, Keys} ->

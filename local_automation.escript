@@ -816,8 +816,9 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                 case Elt of
                     {duration, Minutes} ->
                         io_lib:format("~s -duration ~bm", [Acc, Minutes]);
-                    {report_interval, Seconds} ->
-                        io_lib:format("~s -reportInterval ~bs", [Acc, Seconds]);
+                    {report_interval, ReportTimeSpec} ->
+                        {ok, Millis} = parse_timeout_spec(ReportTimeSpec),
+                        io_lib:format("~s -reportInterval ~s", [Acc, to_go_duration(Millis)]);
                     {concurrent, Threads} ->
                         io_lib:format("~s -concurrent ~b", [Acc, Threads]);
                     {key_range, Keys} ->
@@ -1047,8 +1048,9 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                 case Elt of
                     {duration, Minutes} ->
                         io_lib:format("~s -duration ~bm", [Acc, Minutes]);
-                    {report_interval, Seconds} ->
-                        io_lib:format("~s -reportInterval ~bs", [Acc, Seconds]);
+                    {report_interval, ReportTimeSpec} ->
+                        {ok, Millis} = parse_timeout_spec(ReportTimeSpec),
+                        io_lib:format("~s -reportInterval ~s", [Acc, to_go_duration(Millis)]);
                     {concurrent, Threads} ->
                         io_lib:format("~s -concurrent ~b", [Acc, Threads]);
                     {key_range, Keys} ->
