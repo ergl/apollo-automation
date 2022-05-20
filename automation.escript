@@ -270,7 +270,17 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
         RunWith1 =
             case ClientVariant of
                 go_runner ->
-                    RunWith;
+                    case RunWith of
+                        #{report_interval := Number} when is_integer(Number)->
+                            io:fwrite(
+                                standard_error,
+                                "[~s] Invalid report_interval spec: ~p, please be explicit. Perhaps you meant {milliseconds, ~b} ? ~n",
+                                [maps:get(results_folder, Experiment), Number, Number]
+                            ),
+                            throw(error);
+                        _ ->
+                            RunWith
+                    end;
                 lasp_bench_runner ->
                     RunWith0 =
                         case RunWith of
