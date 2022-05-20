@@ -835,6 +835,8 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -retryAbort", [Acc]);
                     {key_distribution, uniform} ->
                         io_lib:format("~s -distribution uniform", [Acc]);
+                    {key_distribution, {uniform_exclude, Key}} when is_integer(Key) ->
+                        io_lib:format("~s -distribution uniform_exclude -distrArgs '-key ~b'", [Acc, Key]);
                     {key_distribution, pareto} ->
                         io_lib:format("~s -distribution pareto", [Acc]);
                     {key_distribution, split_uniform} ->
@@ -1069,6 +1071,8 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -retryAbort", [Acc]);
                     {key_distribution, uniform} ->
                         io_lib:format("~s -distribution uniform", [Acc]);
+                    {key_distribution, {uniform_exclude, Key}} when is_integer(Key) ->
+                        io_lib:format("~s -distribution uniform_exclude -distrArgs '-key ~b'", [Acc, Key]);
                     {key_distribution, pareto} ->
                         io_lib:format("~s -distribution pareto", [Acc]);
                     {key_distribution, split_uniform} ->
