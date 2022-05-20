@@ -252,6 +252,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     mixed when ClientVariant =:= lasp_bench_runner -> VerifyOp(Op, [mixed_read_write]);
                     no_tx_read -> VerifyOp(Op, [readonly_ops]);
                     no_tx_read_with_id -> VerifyOp(Op, [readonly_ops]);
+                    update_contention -> VerifyOp(Op, [writeonly_ops]);
                     _ ->
                         io:fwrite(
                             standard_error,
@@ -1870,6 +1871,8 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
                 io_lib:format("no_tx_read_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (no_tx_read_with_id) ->
                 io_lib:format("no_tx_read_with_id_~b", [proplists:get_value(readonly_ops, RunTerms)]);
+            (update_contention) ->
+                io_lib:format("update_contention_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (Other) ->
                 atom_to_list(Other)
         end,
