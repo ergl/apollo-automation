@@ -20,3 +20,4 @@
 {txn_ttl, {minutes, 5}}.
 {prepare_retransmit_interval, {milliseconds, 500}}.
 {magic_crash_key, '_'}.
+{commit_protocol, multi_shot}.

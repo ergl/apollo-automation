@@ -182,6 +182,15 @@ start_ext(Replica, Partition, Config) ->
                 ArgString3
         end,
 
+    ArgString5 =
+        case get_config_key(commit_protocol, Config) of
+            {ok, spanner}  ->
+                ArgString4 ++ io_lib:format(" -commitProtocol 1");
+            _ ->
+                %% Default values, no need to customize it
+                ArgString4
+        end,
+
     OptionalTimeoutSpecs = [
         {checkpoint_interval, "-checkpointInterval"},
         {recovery_min_wait, "-recoveryMinWait"},
@@ -201,7 +210,7 @@ start_ext(Replica, Partition, Config) ->
                         Acc
                 end
             end,
-            ArgString4,
+            ArgString5,
             OptionalTimeoutSpecs
         ),
 
