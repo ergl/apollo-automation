@@ -185,7 +185,7 @@ start_ext(Replica, Partition, Config) ->
     ArgString5 =
         case get_config_key(commit_protocol, Config) of
             {ok, spanner}  ->
-                ArgString4 ++ io_lib:format(" -commitProtocol 1");
+                ArgString4 ++ " -commitProtocol 1";
             _ ->
                 %% Default values, no need to customize it
                 ArgString4
