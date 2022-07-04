@@ -196,7 +196,8 @@ start_ext(Replica, Partition, Config) ->
         {recovery_min_wait, "-recoveryMinWait"},
         {recovery_backoff, "-recoveryBackoff"},
         {txn_ttl, "-txnTTL"},
-        {prepare_retransmit_interval, "-prepareRetransmitInterval"}
+        {prepare_retransmit_interval, "-prepareRetransmitInterval"},
+        {max_clock_skew, "-maxClockSkew"}
     ],
 
     ArgStringWithTimeouts =

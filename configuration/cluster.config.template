@@ -18,6 +18,7 @@
 {recovery_min_wait, {milliseconds, 500}}.
 {recovery_backoff, {seconds, 1}}.
 {txn_ttl, {minutes, 5}}.
+{max_clock_skew, {milliseconds, 500}}.
 {prepare_retransmit_interval, {milliseconds, 500}}.
 {magic_crash_key, '_'}.
 {commit_protocol, multi_shot}.
