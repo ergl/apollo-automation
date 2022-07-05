@@ -104,7 +104,7 @@ execute_command({restart, Replica, Partition}, Config) ->
 %% internal
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_ext(Replica, Partition, Config) ->
+start_ext(Replica, _Partition, Config) ->
     _ = os_cmd("sudo sysctl net.ipv4.ip_local_port_range=\"15000 61000\""),
 
     {ok, MASTER_NODE} = get_config_key(master_node, Config),
@@ -132,11 +132,28 @@ start_ext(Replica, Partition, Config) ->
 
     WORKER_THREADS = get_config_key(worker_threads, Config, ?DEFAULT_WORKER_THREADS),
 
+    % ArgString0 = io_lib:format(
+    %     "-replica ~s -partition ~b -ip ~s -port ~b -replPort ~b -mIp ~s -mPort ~b -pingMs ~b -f ~b -log ~s -log_level ~b -shards ~b",
+    %     [
+    %         Replica,
+    %         Partition,
+    %         IP,
+    %         PORT,
+    %         INTER_DC_PORT,
+    %         MASTER_NODE,
+    %         MASTER_PORT,
+    %         PING_INTERVAL_MS,
+    %         FAULT_TOLERANCE_FACTOR,
+    %         LOG_FILE,
+    %         LOG_LEVEL,
+    %         WORKER_THREADS
+    %     ]
+    % ),
+
     ArgString0 = io_lib:format(
-        "-replica ~s -partition ~b -ip ~s -port ~b -replPort ~b -mIp ~s -mPort ~b -pingMs ~b -f ~b -log ~s -log_level ~b -shards ~b",
+        "-replica ~s -ip ~s -port ~b -replPort ~b -mIp ~s -mPort ~b -pingMs ~b -f ~b -log ~s -log_level ~b -shards ~b",
         [
             Replica,
-            Partition,
             IP,
             PORT,
             INTER_DC_PORT,
@@ -166,13 +183,14 @@ start_ext(Replica, Partition, Config) ->
                 ArgString1
         end,
 
-    ArgString3 =
-        case get_config_key(commit_gc_checkpoint_threshold, Config) of
-            {ok, GCThreshold} ->
-                ArgString2 ++ io_lib:format(" -committedGCCheckpointThreshold ~b", [GCThreshold]);
-            error ->
-                ArgString2
-        end,
+    ArgString3 = ArgString2,
+    % ArgString3 =
+    %     case get_config_key(commit_gc_checkpoint_threshold, Config) of
+    %         {ok, GCThreshold} ->
+    %             ArgString2 ++ io_lib:format(" -committedGCCheckpointThreshold ~b", [GCThreshold]);
+    %         error ->
+    %             ArgString2
+    %     end,
 
     ArgString4 =
         case get_config_key(magic_crash_key, Config) of
@@ -193,10 +211,12 @@ start_ext(Replica, Partition, Config) ->
 
     OptionalTimeoutSpecs = [
         {checkpoint_interval, "-checkpointInterval"},
-        {recovery_min_wait, "-recoveryMinWait"},
-        {recovery_backoff, "-recoveryBackoff"},
+        % {recovery_min_wait, "-recoveryMinWait"},
+        {recovery_min_wait, "-coordRecoveryMinWait"},
+        % {recovery_backoff, "-recoveryBackoff"},
         {txn_ttl, "-txnTTL"},
-        {prepare_retransmit_interval, "-prepareRetransmitInterval"},
+        % {prepare_retransmit_interval, "-prepareRetransmitInterval"},
+        {prepare_retransmit_interval, "-coordCheckInterval"},
         {max_clock_skew, "-maxClockSkew"}
     ],
 
