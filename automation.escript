@@ -1575,6 +1575,8 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
                         io_lib:format("~s -upperPartitionRange ~b", [Acc, UpperPartitionRange]);
                     {lower_partition_range, LowerPartitionRange} when is_integer(LowerPartitionRange) ->
                         io_lib:format("~s -lowerPartitionRange ~b", [Acc, LowerPartitionRange]);
+                    {log_level, Level} when is_integer(Level) ->
+                        io_lib:format("~s -log_level ~b", [Acc, Level]);
                     _ ->
                         Acc
                 end

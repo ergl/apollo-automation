@@ -869,6 +869,8 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                     {commit_timeout, TimeoutSpec} ->
                         {ok, Millis} = parse_timeout_spec(TimeoutSpec),
                         io_lib:format("~s -commitTimeout ~s", [Acc, to_go_duration(Millis)]);
+                    {log_level, Level} when is_integer(Level) ->
+                        io_lib:format("~s -log_level ~b", [Acc, Level]);
                     _ ->
                         Acc
                 end
@@ -1109,6 +1111,8 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -upperPartitionRange ~b", [Acc, UpperPartitionRange]);
                     {lower_partition_range, LowerPartitionRange} when is_integer(LowerPartitionRange) ->
                         io_lib:format("~s -lowerPartitionRange ~b", [Acc, LowerPartitionRange]);
+                    {log_level, Level} when is_integer(Level) ->
+                        io_lib:format("~s -log_level ~b", [Acc, Level]);
                     _ ->
                         Acc
                 end

@@ -19,3 +19,5 @@
 
 {upper_partition_range, -1}.
 {lower_partition_range, -1}.
+
+{log_level, 1}.
