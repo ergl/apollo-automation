@@ -22,3 +22,4 @@
 {prepare_retransmit_interval, {milliseconds, 500}}.
 {magic_crash_key, '_'}.
 {commit_protocol, multi_shot}.
+{spanner_abort_interval, {milliseconds, 500}}.

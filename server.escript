@@ -185,7 +185,16 @@ start_ext(Replica, Partition, Config) ->
     ArgString5 =
         case get_config_key(commit_protocol, Config) of
             {ok, spanner}  ->
-                ArgString4 ++ " -commitProtocol 1";
+                case get_config_key(spanner_abort_interval, Config) of
+                    {ok, AbortTimeoutSpec} ->
+                        {ok, AbortTimeout} = parse_timeout_spec(AbortTimeoutSpec),
+                        io_lib:format(
+                            "~s -commitProtocol 1 -spannerAbortInterval ~s",
+                            [ArgString4, to_go_duration(AbortTimeout)]
+                        );
+                    error ->
+                        ArgString4 ++ " -commitProtocol 1"
+                end;
             _ ->
                 %% Default values, no need to customize it
                 ArgString4
