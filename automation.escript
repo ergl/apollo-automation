@@ -499,7 +499,7 @@ build_crasher_spec(Experiment, ConfigTerms, RunTerms, LoadSpec, #{
                 FailureTime
         end,
 
-    CrashKey = maps:get(magic_crash_key, ConfigTerms),
+    CrashKey = maps:get(contention_crash_key, ConfigTerms),
     if
         CrashKey =:= HotKey ->
             io:fwrite(
@@ -519,7 +519,7 @@ build_crasher_spec(Experiment, ConfigTerms, RunTerms, LoadSpec, #{
         master_node => maps:get(master_node, ConfigTerms),
         master_port => maps:get(master_port, ConfigTerms),
 
-        magic_crash_key => CrashKey,
+        contention_crash_key => CrashKey,
         hot_key => HotKey,
 
         op_timeout => maps:get(op_timeout, RunTerms),
@@ -1789,7 +1789,7 @@ spawn_crasher(GitTag, Node, CrasherSpec) ->
         master_node := MasterNode,
         master_port := MasterPort,
 
-        magic_crash_key := CrashKey,
+        contention_crash_key := CrashKey,
         hot_key := HotKey,
 
         op_timeout := OpTimeoutSpec,

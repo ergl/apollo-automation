@@ -20,6 +20,6 @@
 {txn_ttl, {minutes, 5}}.
 {max_clock_skew, {milliseconds, 500}}.
 {prepare_retransmit_interval, {milliseconds, 500}}.
-{magic_crash_key, '_'}.
+{contention_crash_key, '_'}.
 {commit_protocol, multi_shot}.
 {spanner_abort_interval, {milliseconds, 500}}.

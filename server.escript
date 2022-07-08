@@ -175,9 +175,9 @@ start_ext(Replica, Partition, Config) ->
         end,
 
     ArgString4 =
-        case get_config_key(magic_crash_key, Config) of
+        case get_config_key(contention_crash_key, Config) of
             {ok, MagicKey} when is_integer(MagicKey) ->
-                ArgString3 ++ io_lib:format(" -magicCrashKey ~b", [MagicKey]);
+                ArgString3 ++ io_lib:format(" -contentionCrashKey ~b", [MagicKey]);
             _ ->
                 ArgString3
         end,
