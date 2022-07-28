@@ -1814,7 +1814,7 @@ spawn_crasher(GitTag, Node, CrasherSpec) ->
     ),
 
     Cmd = io_lib:format("~s \"~s\" ~s", [?IN_NODES_PATH, Command, atom_to_list(Node)]),
-    safe_cmd(Cmd),
+    io:format("Crasher output: ~s~n", [safe_cmd(Cmd)]),
 
     ok.
 
