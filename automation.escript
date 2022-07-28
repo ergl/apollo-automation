@@ -446,7 +446,7 @@ build_failure_spec(Experiment, ConfigTerms, Failures) ->
     ).
 
 build_crasher_spec(_, _, _, _, M) when map_size(M) =:= 0 -> #{};
-build_crasher_spec(Experiment, ConfigTerms, RunTerms, LoadSpec, #{
+build_crasher_spec(Experiment, ConfigTerms, RunTerms, LoadSpec, CrasherSpec = #{
     replica := CrasherReplica,
     hot_key := HotKey,
     at := TimeSpec
@@ -513,6 +513,22 @@ build_crasher_spec(Experiment, ConfigTerms, RunTerms, LoadSpec, #{
             ok
     end,
 
+    OpTimeout =
+        if
+            is_map_key(op_timeout, CrasherSpec) ->
+                maps:get(op_timeout, CrasherSpec);
+            true ->
+                maps:get(op_timeout, RunTerms)
+        end,
+
+    CommitTimeout =
+        if
+            is_map_key(commit_timeout, CrasherSpec) ->
+                maps:get(commit_timeout, CrasherSpec);
+            true ->
+                maps:get(commit_timeout, RunTerms)
+        end,
+
     #{
         replica => CrasherReplica,
 
@@ -522,8 +538,8 @@ build_crasher_spec(Experiment, ConfigTerms, RunTerms, LoadSpec, #{
         contention_crash_key => CrashKey,
         hot_key => HotKey,
 
-        op_timeout => maps:get(op_timeout, RunTerms),
-        commit_timeout => maps:get(commit_timeout, RunTerms),
+        op_timeout => OpTimeout,
+        commit_timeout => CommitTimeout,
 
         value_bytes => maps:get(val_size, LoadSpec),
 
