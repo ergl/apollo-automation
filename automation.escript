@@ -177,6 +177,24 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
 
         % Verify that run terms is well formed
 
+        Distribution = maps:get(key_distribution, RunWith),
+        case Distribution of
+            {Kind, _, Bias} when Kind =:= biased_key orelse Kind =:= biased_key_worker_id ->
+                if
+                    is_float(Bias) andalso Bias >= 0 andalso Bias =< 1 ->
+                        ok;
+                    true ->
+                        io:fwrite(
+                            standard_error,
+                            "[~s] Wrong bias parameter ~p for ~p distribution: use a floating point value between 0 and 1~n",
+                            [maps:get(results_folder, Experiment), Bias, Kind]
+                        ),
+                        throw(error)
+                end;
+            _ ->
+                ok
+        end,
+
         VerifyOp =
             fun(Op, Keys) when is_list(Keys) ->
                 lists:foreach(
@@ -540,6 +558,8 @@ build_crasher_spec(Experiment, ConfigTerms, RunTerms, LoadSpec, CrasherSpec = #{
 
         op_timeout => OpTimeout,
         commit_timeout => CommitTimeout,
+
+        retries => maps:get(retries, CrasherSpec, 0),
 
         value_bytes => maps:get(val_size, LoadSpec),
 
@@ -1559,10 +1579,10 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
                         io_lib:format("~s -distribution pareto", [Acc]);
                     {key_distribution, split_uniform} ->
                         io_lib:format("~s -distribution split_uniform", [Acc]);
-                    {key_distribution, {biased_key, Key, Bias}} when is_integer(Key) andalso is_integer(Bias) ->
-                        io_lib:format("~s -distribution biased_key -distrArgs '-hotKey ~b -bias ~b'", [Acc, Key, Bias]);
-                    {key_distribution, {biased_key_worker_id, Key, Bias}} when is_integer(Key) andalso is_integer(Bias) ->
-                        io_lib:format("~s -distribution biased_key_by_worker -distrArgs '-hotKey ~b -bias ~b'", [Acc, Key, Bias]);
+                    {key_distribution, {biased_key, Key, Bias}} when is_integer(Key) andalso is_float(Bias) ->
+                        io_lib:format("~s -distribution biased_key -distrArgs '-hotKey ~b -bias ~.3f'", [Acc, Key, Bias]);
+                    {key_distribution, {biased_key_worker_id, Key, Bias}} when is_integer(Key) andalso is_float(Bias) ->
+                        io_lib:format("~s -distribution biased_key_by_worker -distrArgs '-hotKey ~b -bias ~.3f'", [Acc, Key, Bias]);
                     {key_distribution, {constant_key, Key}} when is_integer(Key) ->
                         io_lib:format("~s -distribution constant_key -distrArgs '-key ~b'", [Acc, Key]);
                     {operations, OpList} ->
@@ -1811,6 +1831,8 @@ spawn_crasher(GitTag, Node, CrasherSpec) ->
         op_timeout := OpTimeoutSpec,
         commit_timeout := CommitTimeoutSpec,
 
+        retries := CrasherRetries,
+
         value_bytes := ValueBytes
     } = CrasherSpec,
 
@@ -1818,8 +1840,8 @@ spawn_crasher(GitTag, Node, CrasherSpec) ->
     {ok, CommitTimeout} = parse_timeout_spec(CommitTimeoutSpec),
 
     ArgString = io_lib:format(
-        "-replica ~s -master_ip ~s -master_port ~b -crashKey ~b -hotKey ~b -opTimeout ~s -commitTimeout ~s -value_bytes ~b",
-        [CrasherReplica, atom_to_list(MasterNode), MasterPort, CrashKey, HotKey, to_go_duration(OpTimeout), to_go_duration(CommitTimeout), ValueBytes]
+        "-replica ~s -master_ip ~s -master_port ~b -crashKey ~b -hotKey ~b -opTimeout ~s -commitTimeout ~s -value_bytes ~b -retries ~b",
+        [CrasherReplica, atom_to_list(MasterNode), MasterPort, CrashKey, HotKey, to_go_duration(OpTimeout), to_go_duration(CommitTimeout), ValueBytes, CrasherRetries]
     ),
 
     Command = client_command(
