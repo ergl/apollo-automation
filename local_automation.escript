@@ -833,20 +833,9 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -writeKeys ~b", [Acc, N]);
                     {retry_aborts, true} ->
                         io_lib:format("~s -retryAbort", [Acc]);
-                    {key_distribution, uniform} ->
-                        io_lib:format("~s -distribution uniform", [Acc]);
-                    {key_distribution, {uniform_exclude, Key}} when is_integer(Key) ->
-                        io_lib:format("~s -distribution uniform_exclude -distrArgs '-key ~b'", [Acc, Key]);
-                    {key_distribution, pareto} ->
-                        io_lib:format("~s -distribution pareto", [Acc]);
-                    {key_distribution, split_uniform} ->
-                        io_lib:format("~s -distribution split_uniform", [Acc]);
-                    {key_distribution, {biased_key, Key, Bias}} when is_integer(Key) andalso is_float(Bias) ->
-                        io_lib:format("~s -distribution biased_key -distrArgs '-hotKey ~b -bias ~.3f'", [Acc, Key, Bias]);
-                    {key_distribution, {biased_key_worker_id, Key, Bias}} when is_integer(Key) andalso is_float(Bias) ->
-                        io_lib:format("~s -distribution biased_key_by_worker -distrArgs '-hotKey ~b -bias ~.3f'", [Acc, Key, Bias]);
-                    {key_distribution, {constant_key, Key}} when is_integer(Key) ->
-                        io_lib:format("~s -distribution constant_key -distrArgs '-key ~b'", [Acc, Key]);
+                    {key_distribution, Spec} ->
+                        {DistributionString, ExtraFlags} = format_key_distribution(Spec),
+                        io_lib:format("~s -distribution ~s ~s", [Acc, DistributionString, ExtraFlags]);
                     {operations, OpList} ->
                         lists:foldl(
                             fun(Op, InnerAcc) ->
@@ -1071,20 +1060,9 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -writeKeys ~b", [Acc, N]);
                     {retry_aborts, true} ->
                         io_lib:format("~s -retryAbort", [Acc]);
-                    {key_distribution, uniform} ->
-                        io_lib:format("~s -distribution uniform", [Acc]);
-                    {key_distribution, {uniform_exclude, Key}} when is_integer(Key) ->
-                        io_lib:format("~s -distribution uniform_exclude -distrArgs '-key ~b'", [Acc, Key]);
-                    {key_distribution, pareto} ->
-                        io_lib:format("~s -distribution pareto", [Acc]);
-                    {key_distribution, split_uniform} ->
-                        io_lib:format("~s -distribution split_uniform", [Acc]);
-                    {key_distribution, {biased_key, Key, Bias}} when is_integer(Key) andalso is_float(Bias) ->
-                        io_lib:format("~s -distribution biased_key -distrArgs '-hotKey ~b -bias ~.3f'", [Acc, Key, Bias]);
-                    {key_distribution, {biased_key_worker_id, Key, Bias}} when is_integer(Key) andalso is_float(Bias) ->
-                        io_lib:format("~s -distribution biased_key_by_worker -distrArgs '-hotKey ~b -bias ~.3f'", [Acc, Key, Bias]);
-                    {key_distribution, {constant_key, Key}} when is_integer(Key) ->
-                        io_lib:format("~s -distribution constant_key -distrArgs '-key ~b'", [Acc, Key]);
+                    {key_distribution, Spec} ->
+                        {DistributionString, ExtraFlags} = format_key_distribution(Spec),
+                        io_lib:format("~s -distribution ~s ~s", [Acc, DistributionString, ExtraFlags]);
                     {operations, OpList} ->
                         lists:foldl(
                             fun(Op, InnerAcc) ->
@@ -1346,6 +1324,34 @@ pull_results(ClientVariant, ConfigFile, Path, ClusterMap) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Util
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+format_key_distribution({constant_key, Key}) when is_integer(Key) ->
+    {"constant_key", io_lib:format("-constant_key.key ~b", [Key])};
+
+format_key_distribution(uniform) ->
+    {"uniform", ""};
+
+format_key_distribution({uniform_exclude, ExcludeKey}) when is_integer(ExcludeKey) ->
+    {"uniform_excude", io_lib:format("-uniform_exclude.key ~b", [ExcludeKey])};
+
+format_key_distribution(pareto) ->
+    {"pareto", ""};
+
+format_key_distribution({zipfian, Coefficient}) when is_float(Coefficient) ->
+    {"zipfian", io_lib:format("-zipfian.constant ~.3f", [Coefficient])};
+
+format_key_distribution({scrambled_zipfian, Coefficient, MaxKeys}) when is_float(Coefficient) andalso is_integer(MaxKeys) ->
+    {"scrambled_zipfian", io_lib:format("-zipfian.constant ~.3f -scrambled_zipfian.max_keys ~b", [Coefficient, MaxKeys])};
+
+format_key_distribution({combine, Bias, LeftSpec, RightSpec}) when is_float(Bias) ->
+    {Left, LeftFlags} = format_key_distribution(LeftSpec),
+    {Right, RightFlags} = format_key_distribution(RightSpec),
+    {"combine", io_lib:format("-combine.bias ~.3f -combine.left ~s -combine.right ~s ~s ~s", [Bias, Left, Right, LeftFlags, RightFlags])};
+
+format_key_distribution({combine_worker, Bias, LeftSpec, RightSpec}) when is_float(Bias) ->
+    {Left, LeftFlags} = format_key_distribution(LeftSpec),
+    {Right, RightFlags} = format_key_distribution(RightSpec),
+    {"combine_worker", io_lib:format("-combine.bias ~.3f -combine.left ~s -combine.right ~s ~s ~s", [Bias, Left, Right, LeftFlags, RightFlags])}.
 
 parse_timeout_spec(Time) when is_integer(Time) ->
 {ok, Time};
