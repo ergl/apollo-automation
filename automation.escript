@@ -1561,7 +1561,7 @@ format_key_distribution(uniform) ->
     {"uniform", ""};
 
 format_key_distribution({uniform_exclude, ExcludeKey}) when is_integer(ExcludeKey) ->
-    {"uniform_excude", io_lib:format("-uniform_exclude.key ~b", [ExcludeKey])};
+    {"uniform_exclude", io_lib:format("-uniform_exclude.key ~b", [ExcludeKey])};
 
 format_key_distribution(pareto) ->
     {"pareto", ""};
