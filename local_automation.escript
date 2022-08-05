@@ -838,8 +838,13 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -distribution ~s ~s", [Acc, DistributionString, ExtraFlags]);
                     {operations, OpList} ->
                         lists:foldl(
-                            fun(Op, InnerAcc) ->
-                                io_lib:format("~s -operation ~s", [InnerAcc, atom_to_list(Op)])
+                            fun({Op, Weight}, InnerAcc) ->
+                                if
+                                    Weight =:= 1.0 ->
+                                        io_lib:format("~s -operation ~s", [InnerAcc, atom_to_list(Op)]);
+                                    true ->
+                                        io_lib:format("~s -operation ~s:~f", [InnerAcc, atom_to_list(Op), Weight])
+                                end
                             end,
                             Acc,
                             OpList
@@ -1065,8 +1070,13 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -distribution ~s ~s", [Acc, DistributionString, ExtraFlags]);
                     {operations, OpList} ->
                         lists:foldl(
-                            fun(Op, InnerAcc) ->
-                                io_lib:format("~s -operation ~s", [InnerAcc, atom_to_list(Op)])
+                            fun({Op, Weight}, InnerAcc) ->
+                                if
+                                    Weight =:= 1.0 ->
+                                        io_lib:format("~s -operation ~s", [InnerAcc, atom_to_list(Op)]);
+                                    true ->
+                                        io_lib:format("~s -operation ~s:~f", [InnerAcc, atom_to_list(Op), Weight])
+                                end
                             end,
                             Acc,
                             OpList

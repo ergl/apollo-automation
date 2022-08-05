@@ -173,7 +173,19 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                 lists:keyreplace(Key, 1, Acc, {Key, Value})
             end,
 
-        RunWith = maps:get(run_with, Experiment),
+        RunWith =
+            begin
+                RW0 = maps:get(run_with, Experiment),
+                RW0#{operations =>
+                    lists:map(
+                        fun
+                            (Op) when is_atom(Op) -> {Op, 1.0};
+                            ({_Name, _Weight}=Op) -> Op
+                        end,
+                        maps:get(operations, RW0)
+                    )
+                }
+            end,
 
         % Verify that run terms is well formed
 
@@ -258,9 +270,25 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                 end
             end,
 
+        CheckOpTerm =
+            fun
+                ({Name, Weight})
+                    when not is_float(Weight) orelse
+                        (is_float(Weight) andalso Weight =< 0)->
+                            io:fwrite(
+                                standard_error,
+                                "[~s] Operation ~p has invalid weight ~p~n",
+                                [maps:get(results_folder, Experiment), Name, Weight]
+                            ),
+                            throw(error);
+                (_) ->
+                    ok
+            end,
+
         Ops = maps:get(operations, RunWith),
         lists:foreach(
-            fun(Op) ->
+            fun({Op, _}=OpTerm) ->
+                ok = CheckOpTerm(OpTerm),
                 case Op of
                     read -> VerifyOp(Op, [readonly_ops]);
                     read_release -> VerifyOp(Op, [readonly_ops]);
@@ -313,21 +341,19 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                             RunWith
                     end;
                 lasp_bench_runner ->
-                    RunWith0 =
-                        case RunWith of
-                            #{report_interval := {seconds, Secs}} ->
-                                RunWith#{report_interval => Secs};
-                            #{report_interval := Spec} ->
-                                io:fwrite(
-                                    standard_error,
-                                    "[~s] Bad report interval spec: ~p~n",
-                                    [maps:get(results_folder, Experiment), Spec]
-                                ),
-                                throw(error);
-                            _ ->
-                                RunWith
-                        end,
-                    RunWith0#{operations => [{OpName, 1} || OpName <- Ops]}
+                    case RunWith of
+                        #{report_interval := {seconds, Secs}} ->
+                            RunWith#{report_interval => Secs};
+                        #{report_interval := Spec} ->
+                            io:fwrite(
+                                standard_error,
+                                "[~s] Bad report interval spec: ~p~n",
+                                [maps:get(results_folder, Experiment), Spec]
+                            ),
+                            throw(error);
+                        _ ->
+                            RunWith
+                    end
             end,
 
         % Fill all template values from experiment definition
@@ -1622,8 +1648,13 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
                         io_lib:format("~s -distribution ~s ~s", [Acc, DistributionString, ExtraFlags]);
                     {operations, OpList} ->
                         lists:foldl(
-                            fun(Op, InnerAcc) ->
-                                io_lib:format("~s -operation ~s", [InnerAcc, atom_to_list(Op)])
+                            fun({Op, Weight}, InnerAcc) ->
+                                if
+                                    Weight =:= 1.0 ->
+                                        io_lib:format("~s -operation ~s", [InnerAcc, atom_to_list(Op)]);
+                                    true ->
+                                        io_lib:format("~s -operation ~s:~f", [InnerAcc, atom_to_list(Op), Weight])
+                                end
                             end,
                             Acc,
                             OpList
@@ -1964,10 +1995,10 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
     OpString =
         lists:foldl(
             fun
-                % Old format
+                % New format
                 ({Op, _}, "") -> io_lib:format("op_~s", [OpToString(Op)]);
                 ({Op, _}, Acc) -> io_lib:format("~s+op_~s", [Acc, OpToString(Op)]);
-                % New format
+                % Old format
                 (Op, "") -> io_lib:format("op_~s", [OpToString(Op)]);
                 (Op, Acc) -> io_lib:format("~s+op_~s", [Acc, OpToString(Op)])
             end,
