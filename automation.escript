@@ -343,6 +343,13 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     end;
                 lasp_bench_runner ->
                     case RunWith of
+                        #{print_interval := _} ->
+                            io:fwrite(
+                                standard_error,
+                                "[~s] Invalid option print_interval for lasp_bench_runner~n",
+                                [maps:get(results_folder, Experiment)]
+                            ),
+                            throw(error);
                         #{report_interval := {seconds, Secs}} ->
                             RunWith#{report_interval => Secs};
                         #{report_interval := Spec} ->
@@ -1630,6 +1637,9 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
                     {report_interval, ReportTimeSpec} ->
                         {ok, Millis} = parse_timeout_spec(ReportTimeSpec),
                         io_lib:format("~s -reportInterval ~s", [Acc, to_go_duration(Millis)]);
+                    {print_interval, PrintTimeSpec} ->
+                        {ok, Millis} = parse_timeout_spec(PrintTimeSpec),
+                        io_lib:format("~s -printInterval ~s", [Acc, to_go_duration(Millis)]);
                     {concurrent, Threads} ->
                         io_lib:format("~s -concurrent ~b", [Acc, Threads]);
                     {key_range, Keys} ->

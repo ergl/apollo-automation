@@ -819,6 +819,9 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                     {report_interval, ReportTimeSpec} ->
                         {ok, Millis} = parse_timeout_spec(ReportTimeSpec),
                         io_lib:format("~s -reportInterval ~s", [Acc, to_go_duration(Millis)]);
+                    {print_interval, PrintTimeSpec} ->
+                        {ok, Millis} = parse_timeout_spec(PrintTimeSpec),
+                        io_lib:format("~s -printInterval ~s", [Acc, to_go_duration(Millis)]);
                     {concurrent, Threads} ->
                         io_lib:format("~s -concurrent ~b", [Acc, Threads]);
                     {key_range, Keys} ->
@@ -1051,6 +1054,9 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                     {report_interval, ReportTimeSpec} ->
                         {ok, Millis} = parse_timeout_spec(ReportTimeSpec),
                         io_lib:format("~s -reportInterval ~s", [Acc, to_go_duration(Millis)]);
+                    {print_interval, PrintTimeSpec} ->
+                        {ok, Millis} = parse_timeout_spec(PrintTimeSpec),
+                        io_lib:format("~s -printInterval ~s", [Acc, to_go_duration(Millis)]);
                     {concurrent, Threads} ->
                         io_lib:format("~s -concurrent ~b", [Acc, Threads]);
                     {key_range, Keys} ->
