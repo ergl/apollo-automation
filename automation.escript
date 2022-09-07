@@ -300,6 +300,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     read_track ->  VerifyOp(Op, [readonly_ops]);
                     update -> VerifyOp(Op, [writeonly_ops]);
                     update_modify -> VerifyOp(Op, [writeonly_ops]);
+                    update_modify_batch -> VerifyOp(Op, [writeonly_ops]);
                     update_distinct -> VerifyOp(Op, [writeonly_ops]);
                     update_distinct_measure -> VerifyOp(Op, [writeonly_ops]);
                     update_track -> VerifyOp(Op, [writeonly_ops]);
@@ -1983,6 +1984,7 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
             (read_track) -> io_lib:format("read_track_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (update) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (update_modify) -> io_lib:format("update_modify_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
+            (update_modify_batch) -> io_lib:format("update_modify_batch_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (update_distinct) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (update_distinct_measure) -> io_lib:format("update_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (update_release) -> io_lib:format("update_release_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
