@@ -63,7 +63,7 @@ do_load_tpcc() {
     local target_replica="${4}"
     local num_warehouses="${5}"
 
-    "${home_directory}"/sources/${tag}/${LOAD_BIN_NAME} \
+    "${home_directory}"/sources/${tag}/${TPCC_LOAD_BIN_NAME} \
         -replica "${target_replica}" \
         -master_ip "${master_node}" \
         -master_port "${master_port}" \
