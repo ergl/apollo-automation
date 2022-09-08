@@ -976,7 +976,7 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
                     %% Actual experiment: load then bench
                     case UseTPCCLoad of
                         true ->
-                            ok = load_tpcc(Master, ClusterMap, LoadSpec);
+                            ok = load_tpcc(Master, ClusterMap, RunTerms);
                         false ->
                             ok = load_ext(Master, ClusterMap, LoadSpec)
                     end,
@@ -1506,10 +1506,10 @@ download_runner(lasp_bench_runner, ClusterMap) ->
             end
     end.
 
-load_tpcc(Master, ClusterMap, LoadSpec) ->
+load_tpcc(Master, ClusterMap, RunTerms) ->
     % Sanity check
     go_runner = ets:lookup_element(?CONF, client_variant, 2),
-    Warehouses = maps:get(tpcc_online_warehouses, LoadSpec, 1),
+    Warehouses = get_config_key(tpcc_online_warehouses, RunTerms, 1),
 
     GitTag = ets:lookup_element(?CONF, ext_tag, 2),
     MasterPort = ets:lookup_element(?CONF, master_port, 2),
