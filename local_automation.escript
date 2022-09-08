@@ -65,6 +65,7 @@
     , {stop, false}
 
     , {load, false}
+    , {load_tpcc, false}
     , {bench, false}
     , {bench_no_load, false}
     , {print_bench_command, false}
@@ -123,9 +124,11 @@ main(Args) ->
                     case maps:get(command_arg, Opts, false) of
                         false ->
                             case Command of
+                                load_tpcc ->
+                                    ok = do_command({Command, RunConfig}, Master, ClusterMap, Latencies);
                                 bench ->
                                     ok = do_command({Command, RunConfig}, Master, ClusterMap, Latencies);
-                                bench_lo_load ->
+                                bench_no_load ->
                                     ok = do_command({Command, RunConfig}, Master, ClusterMap, Latencies);
                                 print_bench_command ->
                                     ok = do_command({Command, RunConfig}, Master, ClusterMap, Latencies);
@@ -312,6 +315,10 @@ do_command(stop, Master, ClusterMap, LatencyMap) ->
 
 do_command(load, Master, ClusterMap, _) ->
     ok = load_ext(Master, ClusterMap, ?LOAD_SPEC);
+
+do_command({load_tpcc, RunConfigFileName}, Master, ClusterMap, _) ->
+    {ok, RunTerms} = file:consult(RunConfigFileName),
+    ok = load_tpcc(Master, ClusterMap, RunTerms);
 
 do_command({bench, RunConfigFileName}, Master, ClusterMap, LatencyMap) ->
     ok = do_command(load, Master, ClusterMap, LatencyMap),
@@ -701,6 +708,54 @@ download_runner(lasp_bench_runner, ClusterMap) ->
                 _ ->
                     ok
             end
+    end.
+
+load_tpcc(Master, ClusterMap, RunTerms) ->
+    % Sanity check
+    go_runner = ets:lookup_element(?CONF, client_variant, 2),
+    RunMap = maps:from_list(RunTerms),
+    Warehouses = maps:get(tpcc_online_warehouses, RunMap, 1),
+
+    GitTag = ets:lookup_element(?CONF, ext_tag, 2),
+    MasterPort = ets:lookup_element(?CONF, master_port, 2),
+
+    TargetClients =
+        maps:fold(
+            fun(Replica, #{clients := C}, Acc) ->
+                [ { Replica, hd(lists:usort(C)) } | Acc ]
+            end,
+            [],
+            ClusterMap
+        ),
+
+    Res =
+        pmap(
+            fun({TargetReplica, ClientNode}) ->
+                ClientNodeStr = atom_to_list(ClientNode),
+                Command = client_command(
+                    ClientNodeStr,
+                    GitTag,
+                    "load_tpcc",
+                    atom_to_list(Master),
+                    integer_to_list(MasterPort),
+                    atom_to_list(TargetReplica),
+                    integer_to_list(Warehouses)
+                ),
+                Cmd = io_lib:format(
+                    "~s \"~s\" ~s",
+                    [?IN_NODES_PATH, Command, ClientNodeStr]
+                ),
+                safe_cmd(Cmd)
+            end,
+            TargetClients,
+            ?TIMEOUT
+        ),
+
+    case Res of
+        {error, _} ->
+            error;
+        _ ->
+            ok
     end.
 
 load_ext(Master, ClusterMap, LoadSpec) ->
@@ -1437,6 +1492,13 @@ client_command(NodeStr, GitTag, Command, Arg1) ->
     io_lib:format(
         "~s/bench.sh -H ~s -T ~s ~s ~s",
         [HomePath, HomePath, GitTag, Command, Arg1]
+    ).
+
+client_command(NodeStr, GitTag, Command, Arg1, Arg2, Arg3, Arg4) ->
+    HomePath = home_path_for_node(NodeStr),
+    io_lib:format(
+        "~s/bench.sh -H ~s -T ~s ~s ~s ~s ~s ~s",
+        [HomePath, HomePath, GitTag, Command, Arg1, Arg2, Arg3, Arg4]
     ).
 
 client_command(NodeStr, GitTag, Command, Arg1, Arg2, Arg3, Arg4, Arg5) ->
