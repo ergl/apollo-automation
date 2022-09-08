@@ -322,9 +322,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     no_tx_read -> VerifyOp(Op, [readonly_ops]);
                     no_tx_read_with_id -> VerifyOp(Op, [readonly_ops]);
                     update_contention -> VerifyOp(Op, [writeonly_ops]);
-                    tpcc_new_order ->
-                        %% Key generation depends completely on TPCC driver
-                        ok;
+                    tpcc_new_order -> VerifyOp(Op, [tpcc_online_warehouses]);
                     _ ->
                         io:fwrite(
                             standard_error,
