@@ -23,3 +23,5 @@
 {lower_partition_range, -1}.
 
 {log_level, 1}.
+
+{tpcc_online_warehouses, 1}.

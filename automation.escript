@@ -76,7 +76,15 @@
         'veleta8' => []
     }).
 
--type experiment_spec() :: #{config := string(), results_folder := string(), run_terms := [{atom(), term()}, ...]}.
+-type experiment_spec() :: #{
+    results_folder := string(),
+    tpcc_load := boolean(),
+    config_temrs := [{atom(), term()}, ...],
+    run_terms := [{atom(), term()}, ...],
+    load_spec := term(),
+    failure_spec := term(),
+    crasher_spec := term()
+}.
 
 usage() ->
     Name = filename:basename(escript:script_name()),
@@ -314,6 +322,9 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     no_tx_read -> VerifyOp(Op, [readonly_ops]);
                     no_tx_read_with_id -> VerifyOp(Op, [readonly_ops]);
                     update_contention -> VerifyOp(Op, [writeonly_ops]);
+                    tpcc_new_order ->
+                        %% Key generation depends completely on TPCC driver
+                        ok;
                     _ ->
                         io:fwrite(
                             standard_error,
@@ -408,8 +419,10 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
 
         [
             #{
-                config_terms => ConfigTerms,
                 results_folder => maps:get(results_folder, Experiment),
+                tpcc_load => is_map_key(tpcc_online_warehouses, RunWith1),
+
+                config_terms => ConfigTerms,
                 run_terms => ExperimentTerms,
                 load_spec => LoadSpec,
                 failure_spec => FailureSpec,
@@ -916,6 +929,7 @@ run_experiments(Retries, Opts, LastClusterTerms, [ Spec | Rest ]=AllSpecs) ->
 
 execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
     #{
+        tpcc_load := UseTPCCLoad,
         config_terms := ConfigTerms,
         results_folder := Results,
         run_terms := RunTerms,
@@ -962,7 +976,12 @@ execute_spec(Opts, PrevConfigTerms, Spec, NextConfigTerms, NextResults) ->
                     ok = timer:sleep(1000),
 
                     %% Actual experiment: load then bench
-                    ok = load_ext(Master, ClusterMap, LoadSpec),
+                    case UseTPCCLoad of
+                        true ->
+                            ok = load_tpcc(Master, ClusterMap, LoadSpec);
+                        false ->
+                            ok = load_ext(Master, ClusterMap, LoadSpec)
+                    end,
                     ok = bench_ext(Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, CrasherSpec),
 
                     %% Give system some time (1 sec) to stabilise
@@ -1489,6 +1508,53 @@ download_runner(lasp_bench_runner, ClusterMap) ->
             end
     end.
 
+load_tpcc(Master, ClusterMap, LoadSpec) ->
+    % Sanity check
+    go_runner = ets:lookup_element(?CONF, client_variant, 2),
+    Warehouses = maps:get(tpcc_online_warehouses, LoadSpec, 1),
+
+    GitTag = ets:lookup_element(?CONF, ext_tag, 2),
+    MasterPort = ets:lookup_element(?CONF, master_port, 2),
+
+    TargetClients =
+        maps:fold(
+            fun(Replica, #{clients := C}, Acc) ->
+                [ { Replica, hd(lists:usort(C)) } | Acc ]
+            end,
+            [],
+            ClusterMap
+        ),
+
+    Res =
+        pmap(
+            fun({TargetReplica, ClientNode}) ->
+                ClientNodeStr = atom_to_list(ClientNode),
+                Command = client_command(
+                    ClientNodeStr,
+                    GitTag,
+                    "load_tpcc",
+                    atom_to_list(Master),
+                    integer_to_list(MasterPort),
+                    atom_to_list(TargetReplica),
+                    integer_to_list(Warehouses)
+                ),
+                Cmd = io_lib:format(
+                    "~s \"~s\" ~s",
+                    [?IN_NODES_PATH, Command, ClientNodeStr]
+                ),
+                safe_cmd(Cmd)
+            end,
+            TargetClients,
+            ?TIMEOUT
+        ),
+
+    case Res of
+        {error, _} ->
+            error;
+        _ ->
+            ok
+    end.
+
 load_ext(Master, ClusterMap, LoadSpec) ->
     load_ext(ets:lookup_element(?CONF, client_variant, 2), Master, ClusterMap, LoadSpec).
 
@@ -1693,6 +1759,8 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
                         io_lib:format("~s -lowerPartitionRange ~b", [Acc, LowerPartitionRange]);
                     {log_level, Level} when is_integer(Level) ->
                         io_lib:format("~s -log_level ~b", [Acc, Level]);
+                    {tpcc_online_warehouses, Warehouses} when is_integer(Warehouses) ->
+                        io_lib:format("~s -tpcc.active_warehouses ~b", [Acc, Warehouses]);
                     _ ->
                         Acc
                 end
@@ -2005,6 +2073,8 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
                 io_lib:format("no_tx_read_with_id_~b", [proplists:get_value(readonly_ops, RunTerms)]);
             (update_contention) ->
                 io_lib:format("update_contention_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
+            (tpcc_new_order) ->
+                "tpcc_new_order";
             (Other) ->
                 atom_to_list(Other)
         end,
@@ -2239,7 +2309,7 @@ show_latencies_for_partition(ExpName, TotalPartitions, Partition, Leader, Latenc
     PartitionStr =
         case Partition of
             undefined -> "all";
-            _ -> io_lib:format("~b", [Partition])                
+            _ -> io_lib:format("~b", [Partition])
         end,
     lists:foreach(
         fun(Region) ->
@@ -2491,6 +2561,13 @@ client_command(NodeStr, GitTag, Command, Arg1) ->
     io_lib:format(
         "~s/bench.sh -H ~s -T ~s ~s ~s",
         [HomePath, HomePath, GitTag, Command, Arg1]
+    ).
+
+client_command(NodeStr, GitTag, Command, Arg1, Arg2, Arg3, Arg4) ->
+    HomePath = home_path_for_node(NodeStr),
+    io_lib:format(
+        "~s/bench.sh -H ~s -T ~s ~s ~s ~s ~s ~s",
+        [HomePath, HomePath, GitTag, Command, Arg1, Arg2, Arg3, Arg4]
     ).
 
 client_command(NodeStr, GitTag, Command, Arg1, Arg2, Arg3, Arg4, Arg5) ->

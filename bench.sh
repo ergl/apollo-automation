@@ -5,6 +5,7 @@ set -eo pipefail
 RUNNER_BIN_NAME=runner_linux_amd64
 LOAD_BIN_NAME=load_linux_amd64
 CRASHER_BIN_NAME=crasher_linux_amd64
+TPCC_LOAD_BIN_NAME=tpcc_load_linux_amd64
 
 do_download() {
     local home_directory="${1}"
@@ -28,6 +29,10 @@ do_download() {
     chmod u+x "${CRASHER_BIN_NAME}"
     mv "${CRASHER_BIN_NAME}" "${folder}/${release_tag}"
 
+    GITHUB_API_TOKEN=${token} ./fetch_gh_release.sh -t "${release_tag}" -f "${TPCC_LOAD_BIN_NAME}"
+    chmod u+x "${TPCC_LOAD_BIN_NAME}"
+    mv "${TPCC_LOAD_BIN_NAME}" "${folder}/${release_tag}"
+
     popd
 }
 
@@ -47,6 +52,22 @@ do_load_ext() {
         -master_port "${master_port}" \
         -keys "${key_number}" \
         -value_bytes "${value_bytes}"
+}
+
+do_load_tpcc() {
+    local home_directory="${1}"
+
+    local master_node="${2}"
+    local master_port="${3}"
+
+    local target_replica="${4}"
+    local num_warehouses="${5}"
+
+    "${home_directory}"/sources/${tag}/${LOAD_BIN_NAME} \
+        -replica "${target_replica}" \
+        -master_ip "${master_node}" \
+        -master_port "${master_port}" \
+        -warehouses "${num_warehouses}"
 }
 
 do_compress() {
@@ -145,6 +166,25 @@ run () {
                 "${key_number}" \
                 "${value_bytes}"
             ;;
+
+        "load_tpcc")
+            if [[ $# -ne 5 ]]; then
+                usage
+                exit 1
+            fi
+            local master_node="${2}"
+            local master_port="${3:-7087}"
+            local bench_replica="${4}"
+            local num_warehouses="${5}"
+
+            echo -e "TPC-C loading ${bench_replica} with ${num_warehouses} warehouses\n"
+            do_load_tpcc "${home_directory}" \
+                "${master_node}" \
+                "${master_port}" \
+                "${bench_replica}" \
+                "${num_warehouses}"
+            ;;
+
 
         "run")
             # Remove "run"

@@ -870,6 +870,8 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -commitTimeout ~s", [Acc, to_go_duration(Millis)]);
                     {log_level, Level} when is_integer(Level) ->
                         io_lib:format("~s -log_level ~b", [Acc, Level]);
+                    {tpcc_online_warehouses, Warehouses} when is_integer(Warehouses) ->
+                        io_lib:format("~s -tpcc.active_warehouses ~b", [Acc, Warehouses]);
                     _ ->
                         Acc
                 end
@@ -1111,6 +1113,8 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -lowerPartitionRange ~b", [Acc, LowerPartitionRange]);
                     {log_level, Level} when is_integer(Level) ->
                         io_lib:format("~s -log_level ~b", [Acc, Level]);
+                    {tpcc_online_warehouses, Warehouses} when is_integer(Warehouses) ->
+                        io_lib:format("~s -tpcc.active_warehouses ~b", [Acc, Warehouses]);
                     _ ->
                         Acc
                 end
