@@ -1655,6 +1655,8 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap, ConfigFile, FailureSpec, Cras
                         io_lib:format("~s -writeKeys ~b", [Acc, N]);
                     {retry_aborts, true} ->
                         io_lib:format("~s -retryAbort", [Acc]);
+                    {disable_think_time, true} ->
+                        io_lib:format("~s -disableThinkTime", [Acc]);
                     {key_distribution, Spec} ->
                         {DistributionString, ExtraFlags} = format_key_distribution(Spec),
                         io_lib:format("~s -distribution ~s ~s", [Acc, DistributionString, ExtraFlags]);

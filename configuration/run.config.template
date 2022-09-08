@@ -14,6 +14,7 @@
 {readonly_ops, '_'}.
 {writeonly_ops, '_'}.
 {retry_aborts, '_'}.
+{disable_think_time, '_'}.
 
 {op_timeout, {seconds, 5}}.
 {commit_timeout, {minutes, 5}}.
