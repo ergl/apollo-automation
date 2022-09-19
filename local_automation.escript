@@ -137,7 +137,7 @@ main(Args) ->
                             end;
                         CommandArg ->
                             ok = do_command({Command, CommandArg}, Master, ClusterMap, Latencies)
-                    end, 
+                    end,
                     true = ets:delete(?CONF),
                     ok
             end
@@ -893,6 +893,16 @@ bench_ext(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -retryAbort", [Acc]);
                     {disable_think_time, true} ->
                         io_lib:format("~s -disableThinkTime", [Acc]);
+                    {default_think_time, Spec} ->
+                        {ok, Millis} = parse_timeout_spec(Spec),
+                        if
+                            Millis > 0 ->
+                                io_lib:format("~s -think.duration ~s", [Acc, to_go_duration(Millis)]);
+                            true ->
+                                Acc
+                        end;
+                    {think_time_jitter_ms, Ms} when Ms > 0 ->
+                        io_lib:format("~s -think.jitter_ms ~b", [Acc, Ms]);
                     {key_distribution, Spec} ->
                         {DistributionString, ExtraFlags} = format_key_distribution(Spec),
                         io_lib:format("~s -distribution ~s ~s", [Acc, DistributionString, ExtraFlags]);
@@ -1132,6 +1142,16 @@ print_bench_command(go_runner, Master, RunTerms, ClusterMap) ->
                         io_lib:format("~s -retryAbort", [Acc]);
                     {disable_think_time, true} ->
                         io_lib:format("~s -disableThinkTime", [Acc]);
+                    {default_think_time, Spec} ->
+                        {ok, Millis} = parse_timeout_spec(Spec),
+                        if
+                            Millis > 0 ->
+                                io_lib:format("~s -think.duration ~s", [Acc, to_go_duration(Millis)]);
+                            true ->
+                                Acc
+                        end;
+                    {think_time_jitter_ms, Ms} when Ms > 0 ->
+                        io_lib:format("~s -think.jitter_ms ~b", [Acc, Ms]);
                     {key_distribution, Spec} ->
                         {DistributionString, ExtraFlags} = format_key_distribution(Spec),
                         io_lib:format("~s -distribution ~s ~s", [Acc, DistributionString, ExtraFlags]);
