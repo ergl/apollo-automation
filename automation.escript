@@ -323,6 +323,7 @@ materialize_single_experiment(ClusterTerms, TemplateTerms, LoadSpec, Experiment 
                     no_tx_read_with_id -> VerifyOp(Op, [readonly_ops]);
                     update_contention -> VerifyOp(Op, [writeonly_ops]);
                     tpcc_new_order -> VerifyOp(Op, [tpcc_online_warehouses]);
+                    tpcc_new_order_mini -> VerifyOp(Op, [tpcc_online_warehouses]);
                     tpcc_payment -> VerifyOp(Op, [tpcc_online_warehouses]);
                     _ ->
                         io:fwrite(
@@ -2084,6 +2085,8 @@ pull_results(ConfigTerms, ConfigFile, ResultsFolder, RunTerms, ClusterMap, Shoul
                 io_lib:format("update_contention_~b", [proplists:get_value(writeonly_ops, RunTerms)]);
             (tpcc_new_order) ->
                 "tpcc_new_order";
+            (tpcc_new_order_mini) ->
+                "tpcc_new_order_mini";
             (tpcc_payment) ->
                 "tpcc_payment";
             (Other) ->
